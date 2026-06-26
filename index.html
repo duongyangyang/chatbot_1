@@ -2,10 +2,11 @@
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
 <meta name="theme-color" content="#0f0f0f">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Trợ lý AI">
 <title>Trợ lý AI</title>
 <link rel="manifest" href="/manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -35,14 +36,27 @@
     font-size: 15px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  input, textarea, select, button {
+    -webkit-user-select: text;
+    user-select: text;
   }
 
   #app {
     display: flex;
     flex-direction: column;
-    height: 100dvh;
+    height: 100%;
     max-width: 680px;
     margin: 0 auto;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
   }
 
   /* Header */
@@ -51,11 +65,12 @@
     align-items: center;
     gap: 10px;
     padding: 14px 16px;
+    padding-top: max(14px, env(safe-area-inset-top));
     border-bottom: 1px solid var(--border);
     background: var(--bg);
-    position: sticky;
-    top: 0;
+    position: relative;
     z-index: 10;
+    flex-shrink: 0;
   }
 
   .avatar {
@@ -85,6 +100,8 @@
     padding: 6px 10px; font-size: 12px;
     cursor: pointer; transition: all .2s;
     font-family: var(--font);
+    -webkit-user-select: none;
+    user-select: none;
   }
   #notif-btn:hover { border-color: var(--accent); color: var(--accent); }
   #notif-btn.enabled { border-color: #22c55e; color: #22c55e; }
@@ -93,6 +110,7 @@
   #messages {
     flex: 1;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     padding: 16px;
     display: flex;
     flex-direction: column;
@@ -148,6 +166,8 @@
     color: var(--muted);
     margin-top: 3px;
     text-align: right;
+    -webkit-user-select: none;
+    user-select: none;
   }
   .msg-row.ai .msg-time { text-align: left; }
 
@@ -188,11 +208,13 @@
   /* Input */
   #input-area {
     padding: 12px 16px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
     border-top: 1px solid var(--border);
     background: var(--bg);
     display: flex;
     gap: 10px;
     align-items: flex-end;
+    flex-shrink: 0;
   }
 
   #msg-input {
@@ -203,11 +225,12 @@
     padding: 10px 16px;
     color: var(--text);
     font-family: var(--font);
-    font-size: 14px;
+    font-size: 16px;
     resize: none;
     outline: none;
     max-height: 120px;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     line-height: 1.5;
     transition: border-color .2s;
   }
@@ -224,6 +247,8 @@
     display: flex; align-items: center; justify-content: center;
     flex-shrink: 0;
     transition: background .2s, transform .1s;
+    -webkit-user-select: none;
+    user-select: none;
   }
   #send-btn:hover { background: var(--accent2); }
   #send-btn:active { transform: scale(.93); }
@@ -281,11 +306,17 @@
     cursor: pointer;
     transition: all .2s;
     color: var(--text);
+    -webkit-user-select: none;
+    user-select: none;
   }
   .chip:hover { border-color: var(--accent); color: var(--accent); }
 
   @media (prefers-reduced-motion: reduce) {
     .typing span { animation: none; }
+  }
+
+  @supports (padding: max(0px)) {
+    body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
   }
 </style>
 </head>
@@ -333,6 +364,13 @@ const API_URL = '/chat';
 let isTyping = false;
 let swRegistration = null;
 let hasMessages = false;
+
+// Prevent default zoom on input focus
+document.addEventListener('touchstart', function(e) {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+    e.target.style.fontSize = '16px';
+  }
+}, { passive: true });
 
 // Auto resize textarea
 function autoResize(el) {
