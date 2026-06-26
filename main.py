@@ -22,7 +22,7 @@ VAPID_PRIVATE   = os.getenv("VAPID_PRIVATE_KEY", "")
 VAPID_PUBLIC    = os.getenv("VAPID_PUBLIC_KEY", "")
 VAPID_EMAIL     = os.getenv("VAPID_EMAIL", "mailto:you@example.com")
 
-client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
+# client được tạo động theo config của từng request
 
 # In-memory storage (thay bằng Redis/PostgreSQL sau)
 chat_history: list[dict] = []
@@ -61,6 +61,15 @@ async def chat(request: Request):
     if not user_msg:
         return JSONResponse({"reply": "Bạn chưa nhắn gì."})
 
+    api_key  = data.get("api_key", OPENAI_API_KEY).strip()
+    base_url = data.get("base_url", OPENAI_BASE_URL).strip()
+    model    = data.get("model", "krr/claude-haiku-4-5-20251001").strip()
+
+    if not api_key:
+        return JSONResponse({"reply": "⚙️ Bạn chưa cài API key. Nhấn nút Cài đặt để điền thông tin."})
+
+    client = OpenAI(api_key=api_key, base_url=base_url)
+
     # Thêm vào history
     chat_history.append({"role": "user", "content": user_msg})
 
@@ -69,7 +78,7 @@ async def chat(request: Request):
 
     try:
         response = client.chat.completions.create(
-            model="krr/claude-haiku-4-5-20251001",
+            model=model,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 *history,
@@ -161,8 +170,6 @@ def schedule_reminder(reminder: dict):
 @app.on_event("startup")
 async def startup():
     scheduler.start()
-    print("✅ Trợ lý AI đang chạy tại http://localhost:8000")
-
 
 @app.on_event("shutdown")
 async def shutdown():

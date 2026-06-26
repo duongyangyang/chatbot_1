@@ -320,6 +320,94 @@
   @supports (padding: max(0px)) {
     body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
   }
+
+  /* Settings modal */
+  #settings-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.7);
+    z-index: 200;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  #settings-overlay.open { display: flex; }
+
+  #settings-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px 20px 0 0;
+    padding: 24px 20px max(24px, env(safe-area-inset-bottom));
+    width: 100%;
+    max-width: 680px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  #settings-panel h3 {
+    font-size: 16px;
+    font-weight: 500;
+    margin-bottom: 2px;
+  }
+
+  .setting-group { display: flex; flex-direction: column; gap: 6px; }
+  .setting-group label { font-size: 12px; color: var(--muted); }
+  .setting-group input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    outline: none;
+    transition: border-color .2s;
+  }
+  .setting-group input:focus { border-color: var(--accent); }
+
+  #settings-save {
+    background: var(--accent);
+    border: none;
+    border-radius: 12px;
+    color: #fff;
+    font-family: var(--font);
+    font-size: 15px;
+    font-weight: 500;
+    padding: 12px;
+    cursor: pointer;
+    transition: background .2s;
+    margin-top: 4px;
+  }
+  #settings-save:hover { background: var(--accent2); }
+
+  #settings-cancel {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--muted);
+    font-family: var(--font);
+    font-size: 14px;
+    padding: 10px;
+    cursor: pointer;
+  }
+
+  /* Settings icon button in header */
+  #settings-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 18px;
+    cursor: pointer;
+    line-height: 1;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  #settings-btn:hover { border-color: var(--accent); color: var(--accent); }
+  #settings-btn.configured { border-color: #22c55e; color: #22c55e; }
+
 </style>
 </head>
 <body>
@@ -330,6 +418,7 @@
       <div class="header-name">Trợ lý AI</div>
       <div class="header-status"><span class="status-dot"></span>Đang hoạt động</div>
     </div>
+    <button id="settings-btn" onclick="openSettings()" title="Cài đặt">⚙️</button>
     <button id="notif-btn" onclick="toggleNotification()">🔔 Thông báo</button>
   </header>
 
@@ -337,7 +426,7 @@
     <div id="empty">
       <div class="big">👋</div>
       <h2>Xin chào! Tôi là trợ lý AI của bạn</h2>
-      <p>Hỏi bất cứ điều gì, đặt lịch,<br>nhắc nhở, hoặc chỉ tâm sự thôi cũng được.</p>
+      <p id="empty-hint">Hỏi bất cứ điều gì, đặt lịch,<br>nhắc nhở, hoặc chỉ tâm sự thôi cũng được.</p>
       <div class="suggestion-chips">
         <div class="chip" onclick="sendSuggestion('Hôm nay tôi cần làm gì?')">📋 Việc hôm nay</div>
         <div class="chip" onclick="sendSuggestion('Nhắc tôi lúc 3h chiều họp')">⏰ Đặt nhắc nhở</div>
@@ -461,6 +550,13 @@ async function sendMessage() {
   const text = input.value.trim();
   if (!text || isTyping) return;
 
+  if (!isConfigured()) {
+    openSettings();
+    showToast('Vui lòng điền thông tin kết nối trước nhé');
+    return;
+  }
+
+  const cfg = loadSettings();
   input.value = '';
   input.style.height = 'auto';
   document.getElementById('send-btn').disabled = true;
@@ -472,7 +568,12 @@ async function sendMessage() {
     const res = await fetch(API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text })
+      body: JSON.stringify({
+        message:  text,
+        api_key:  cfg.apiKey,
+        base_url: cfg.baseUrl,
+        model:    cfg.model,
+      })
     });
     const data = await res.json();
     hideTyping();
@@ -552,6 +653,81 @@ if ('serviceWorker' in navigator) {
     }
   });
 }
+
+// ── Settings ──────────────────────────────────────────────────────────
+function loadSettings() {
+  return {
+    baseUrl: localStorage.getItem('cfg_baseurl') || '',
+    apiKey:  localStorage.getItem('cfg_apikey')  || '',
+    model:   localStorage.getItem('cfg_model')   || '',
+  };
+}
+
+function isConfigured() {
+  const c = loadSettings();
+  return c.apiKey.trim() !== '';
+}
+
+function openSettings() {
+  const c = loadSettings();
+  document.getElementById('cfg-baseurl').value = c.baseUrl;
+  document.getElementById('cfg-apikey').value  = c.apiKey;
+  document.getElementById('cfg-model').value   = c.model;
+  document.getElementById('settings-overlay').classList.add('open');
+}
+
+function closeSettings() {
+  document.getElementById('settings-overlay').classList.remove('open');
+}
+
+function overlayClick(e) {
+  if (e.target === document.getElementById('settings-overlay')) closeSettings();
+}
+
+function saveSettings() {
+  const baseUrl = document.getElementById('cfg-baseurl').value.trim();
+  const apiKey  = document.getElementById('cfg-apikey').value.trim();
+  const model   = document.getElementById('cfg-model').value.trim();
+
+  if (!apiKey) { showToast('Vui lòng nhập API Key'); return; }
+
+  localStorage.setItem('cfg_baseurl', baseUrl);
+  localStorage.setItem('cfg_apikey',  apiKey);
+  localStorage.setItem('cfg_model',   model);
+
+  document.getElementById('settings-btn').classList.add('configured');
+  showToast('Đã lưu cài đặt ✓');
+  closeSettings();
+}
+
+function checkConfigOnStart() {
+  if (isConfigured()) {
+    document.getElementById('settings-btn').classList.add('configured');
+  }
+}
+checkConfigOnStart();
+
 </script>
+
+<div id="settings-overlay" onclick="overlayClick(event)">
+  <div id="settings-panel">
+    <h3>⚙️ Cài đặt kết nối AI</h3>
+    <div class="setting-group">
+      <label>BASE URL</label>
+      <input id="cfg-baseurl" type="url" placeholder="https://api.example.com/v1">
+    </div>
+    <div class="setting-group">
+      <label>API KEY</label>
+      <input id="cfg-apikey" type="password" placeholder="sk-...">
+    </div>
+    <div class="setting-group">
+      <label>MODEL</label>
+      <input id="cfg-model" type="text" placeholder="gpt-4o">
+    </div>
+    <button id="settings-save" onclick="saveSettings()">Lưu</button>
+    <button id="settings-cancel" onclick="closeSettings()">Huỷ</button>
+  </div>
+</div>
+
 </body>
 </html>
