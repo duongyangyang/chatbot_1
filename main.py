@@ -75,11 +75,44 @@ async def vapid_public_key():
     return JSONResponse({"publicKey": VAPID_PUBLIC})
 
 # ── Route: Debug push (kiểm tra trạng thái VAPID + số thiết bị đã đăng ký) ──
+def _vapid_public_valid(key: str) -> bool:
+    """True nếu key giải mã ra đúng 65 byte, byte đầu = 0x04 (P-256 uncompressed)."""
+    import base64
+    if not key:
+        return False
+    try:
+        raw = base64.urlsafe_b64decode(key + "=" * (-len(key) % 4))
+        return len(raw) == 65 and raw[0] == 0x04
+    except Exception:
+        return False
+
+def _vapid_keys_match() -> bool:
+    """True nếu public key sinh ra đúng từ private key đang có."""
+    try:
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.hazmat.primitives import serialization
+        import base64
+        key = serialization.load_pem_private_key(VAPID_PRIVATE.encode(), password=None)
+        if not isinstance(key.curve, ec.SECP256R1):
+            return False
+        derived = base64.urlsafe_b64encode(
+            key.public_key().public_bytes(
+                serialization.Encoding.X962,
+                serialization.PublicFormat.UncompressedPoint,
+            )
+        ).decode().rstrip("=")
+        return derived == VAPID_PUBLIC
+    except Exception as e:
+        print(f"[vapid] keys_match check error: {e}")
+        return False
+
 @app.get("/debug-push")
 async def debug_push():
     return JSONResponse({
         "vapid_public_set": bool(VAPID_PUBLIC),
+        "vapid_public_valid": _vapid_public_valid(VAPID_PUBLIC),
         "vapid_private_set": bool(VAPID_PRIVATE),
+        "vapid_keys_match": _vapid_keys_match(),
         "vapid_email": VAPID_EMAIL,
         "subscribers": len(push_subscriptions),
     })
@@ -156,28 +189,45 @@ async def subscribe(request: Request):
 
 
 # ── Push notification helper ──────────────────────────────────────────────
-def send_push(title: str, body: str):
-    """Gửi push notification đến tất cả thiết bị đã đăng ký."""
-    if not VAPID_PRIVATE or not push_subscriptions:
-        return
+def send_push(title: str, body: str) -> dict:
+    """Gửi push notification đến tất cả thiết bị đã đăng ký. Trả về tóm tắt + in lỗi ra log."""
+    summary = {"sent": 0, "failed": [], "skipped": ""}
+    if not VAPID_PRIVATE:
+        summary["skipped"] = "VAPID_PRIVATE_KEY chưa cấu hình"
+        print(f"[push] skip: {summary['skipped']}")
+        return summary
+    if not push_subscriptions:
+        summary["skipped"] = "chưa có subscription nào"
+        print("[push] skip: chưa có subscription")
+        return summary
 
     payload = json.dumps({"title": title, "body": body})
     dead = []
 
-    for sub in push_subscriptions:
+    for i, sub in enumerate(push_subscriptions):
+        endpoint = sub.get("endpoint", "?")
         try:
             webpush(
                 subscription_info=sub,
                 data=payload,
                 vapid_private_key=VAPID_PRIVATE,
-                vapid_claims={"sub": VAPID_EMAIL}
+                vapid_claims={"sub": VAPID_EMAIL},
             )
+            summary["sent"] += 1
+            print(f"[push] OK -> {endpoint[:70]}")
         except WebPushException as e:
-            if "410" in str(e):   # subscription expired
+            msg = str(e)
+            print(f"[push] FAIL [{i}] {endpoint[:70]} -> {msg}")
+            summary["failed"].append({"endpoint": endpoint, "error": msg})
+            if "410" in msg or "404" in msg:   # subscription hết hạn
                 dead.append(sub)
+        except Exception as e:
+            print(f"[push] ERROR [{i}] {type(e).__name__}: {e}")
+            summary["failed"].append({"endpoint": endpoint, "error": f"{type(e).__name__}: {e}"})
 
     for d in dead:
         push_subscriptions.remove(d)
+    return summary
 
 
 # ── Route: Test push (gửi 1 thông báo thử để kiểm tra) ─────────────────────
@@ -187,8 +237,7 @@ async def test_push():
         return JSONResponse({"error": "Server chưa cấu hình VAPID_PRIVATE_KEY"}, status_code=500)
     if not push_subscriptions:
         return JSONResponse({"error": "Chưa có thiết bị nào đăng ký nhận thông báo. Hãy mở app, bật thông báo trước."}, status_code=400)
-    send_push("🧪 Kiểm tra", "Thông báo thử từ server")
-    return JSONResponse({"status": "sent", "subscribers": len(push_subscriptions)})
+    return JSONResponse(send_push("🧪 Kiểm tra", "Thông báo thử từ server"))
 
 # ── Route: Test push có trì hoãn (lên lịch gửi sau N giây) ─────────────────
 @app.post("/test-push-delayed")
