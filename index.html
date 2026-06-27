@@ -82,6 +82,12 @@
     display: flex; align-items: center; justify-content: center;
     font-size: 16px;
     flex-shrink: 0;
+    overflow: hidden;
+  }
+
+  .avatar img {
+    width: 100%; height: 100%;
+    object-fit: cover;
   }
 
   .header-info { flex: 1; }
@@ -516,7 +522,7 @@
 <body>
 <div id="app">
   <header>
-    <div class="avatar">🤖</div>
+    <div class="avatar"><img src="/img/icon.jpg" alt="Trợ lý"></div>
     <div class="header-info">
       <div class="header-name">Trợ lý AI</div>
       <div class="header-status"><span class="status-dot"></span>Đang hoạt động</div>
@@ -746,7 +752,7 @@ function renderMarkdown(src){
 // ── Trace: hiển thị thinking + tool calls (giống Claude/Codex) ───────────
 function renderTrace(trace){
   if(!trace || !trace.length) return '';
-  let html = '<details class="trace-wrap"><summary>💭 Quá trình suy nghĩ &amp; công cụ</summary><div class="trace">';
+  let html = '<details class="trace-wrap"><summary> REASONING &amp; TOOLS DETAILED</summary><div class="trace">';
   for(const s of trace){
     if(s.kind === 'thought' && s.text){
       html += '<div class="trace-thought">💭 ' + _escapeRaw(s.text) + '</div>';
@@ -1044,7 +1050,7 @@ function renderPending(it) {
   const row = document.createElement('div');
   row.className = 'msg-row ai';
   row.dataset.pendingId = it.id;
-  const label = PENDING_LABEL[it.type] || 'Trợ lý AI';
+  const label = PENDING_LABEL[it.type] || 'Thư ký Kim';
   let inner = `<div class="pending-card">
     <div class="pending-head">${label} ${escapeHtml(it.period || '')}</div>
     <div class="pending-body">${escapeHtml(it.content || '')}</div>`;
