@@ -28,6 +28,17 @@ VAPID_PRIVATE   = os.getenv("VAPID_PRIVATE_KEY", "")
 VAPID_PUBLIC    = os.getenv("VAPID_PUBLIC_KEY", "")
 VAPID_EMAIL     = os.getenv("VAPID_EMAIL", "mailto:you@example.com")
 
+# pywebpush KHÔNG parse được PEM dưới dạng chuỗi (Vapid.from_string chỉ nhận
+# DER/raw base64, gặp PEM thì lỗi "ASN.1 parsing error: invalid length").
+# Nên dựng sẵn object Vapid từ PEM rồi truyền object vào webpush().
+_VAPID_INSTANCE = None
+if VAPID_PRIVATE:
+    try:
+        from py_vapid import Vapid
+        _VAPID_INSTANCE = Vapid.from_pem(VAPID_PRIVATE.encode())
+    except Exception as e:
+        print(f"[vapid] Không nạp được PEM private key: {e}")
+
 # client được tạo động theo config của từng request
 
 # In-memory storage (thay bằng Redis/PostgreSQL sau)
@@ -192,8 +203,8 @@ async def subscribe(request: Request):
 def send_push(title: str, body: str) -> dict:
     """Gửi push notification đến tất cả thiết bị đã đăng ký. Trả về tóm tắt + in lỗi ra log."""
     summary = {"sent": 0, "failed": [], "skipped": ""}
-    if not VAPID_PRIVATE:
-        summary["skipped"] = "VAPID_PRIVATE_KEY chưa cấu hình"
+    if not _VAPID_INSTANCE:
+        summary["skipped"] = "VAPID private key chưa nạp được (kiểm tra định dạng PEM trong .env)"
         print(f"[push] skip: {summary['skipped']}")
         return summary
     if not push_subscriptions:
@@ -210,7 +221,7 @@ def send_push(title: str, body: str) -> dict:
             webpush(
                 subscription_info=sub,
                 data=payload,
-                vapid_private_key=VAPID_PRIVATE,
+                vapid_private_key=_VAPID_INSTANCE,
                 vapid_claims={"sub": VAPID_EMAIL},
             )
             summary["sent"] += 1
@@ -233,8 +244,8 @@ def send_push(title: str, body: str) -> dict:
 # ── Route: Test push (gửi 1 thông báo thử để kiểm tra) ─────────────────────
 @app.get("/test-push")
 async def test_push():
-    if not VAPID_PRIVATE:
-        return JSONResponse({"error": "Server chưa cấu hình VAPID_PRIVATE_KEY"}, status_code=500)
+    if not _VAPID_INSTANCE:
+        return JSONResponse({"error": "VAPID private key chưa nạp được (kiểm tra PEM trong .env)"}, status_code=500)
     if not push_subscriptions:
         return JSONResponse({"error": "Chưa có thiết bị nào đăng ký nhận thông báo. Hãy mở app, bật thông báo trước."}, status_code=400)
     return JSONResponse(send_push("🧪 Kiểm tra", "Thông báo thử từ server"))
@@ -243,7 +254,7 @@ async def test_push():
 @app.post("/test-push-delayed")
 async def test_push_delayed(request: Request):
     data = await request.json() if request.headers.get("content-type") == "application/json" else {}
-    delay = data.get("delay", 30)
+    delay = data.get("delay", 10)
     try:
         delay = int(delay)
         if delay < 1 or delay > 3600:
@@ -251,8 +262,8 @@ async def test_push_delayed(request: Request):
     except (TypeError, ValueError):
         delay = 30
 
-    if not VAPID_PRIVATE:
-        return JSONResponse({"error": "Server chưa cấu hình VAPID_PRIVATE_KEY"}, status_code=500)
+    if not _VAPID_INSTANCE:
+        return JSONResponse({"error": "VAPID private key chưa nạp được (kiểm tra PEM trong .env)"}, status_code=500)
     if not push_subscriptions:
         return JSONResponse({"error": "Chưa có thiết bị nào đăng ký. Hãy bấm 🔔 Thông báo trên app trước."}, status_code=400)
 
