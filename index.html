@@ -313,6 +313,46 @@
   }
   .chip:hover { border-color: var(--accent); color: var(--accent); }
 
+  /* Schedule card (Morning Planning approval) */
+  .schedule-card {
+    margin-top: 10px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg);
+    overflow: hidden;
+  }
+  .sched-header { font-size: 13px; font-weight: 500; padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .sched-slots { display: flex; flex-direction: column; }
+  .slot { display: flex; gap: 10px; padding: 7px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .slot:last-child { border-bottom: none; }
+  .slot-time { color: var(--accent); font-variant-numeric: tabular-nums; min-width: 48px; flex-shrink: 0; }
+  .slot-title { color: var(--text); }
+  .sched-actions { display: flex; gap: 8px; padding: 8px 12px; }
+  .sched-btn {
+    flex: 1; border: 1px solid var(--border); background: var(--bg);
+    color: var(--text); border-radius: 8px; padding: 8px; font-size: 13px;
+    font-family: var(--font); cursor: pointer; transition: all .2s;
+    -webkit-user-select: none; user-select: none;
+  }
+  .sched-btn.approve { border-color: #22c55e; color: #22c55e; }
+  .sched-btn.approve:active { background: #22c55e22; }
+  .sched-btn.edit { border-color: var(--accent); color: var(--accent); }
+  .sched-btn.edit:active { background: var(--accent); }
+  .sched-approved { padding: 8px 12px; font-size: 12px; color: #22c55e; }
+
+  /* Pending report card (proactive reviews/planning) */
+  .pending-card {
+    margin-top: 10px; border: 1px solid var(--accent); border-left-width: 3px;
+    border-radius: 10px; background: var(--bg); padding: 10px 12px;
+  }
+  .pending-head { font-size: 12px; color: var(--accent); margin-bottom: 6px; }
+  .pending-body { font-size: 13px; white-space: pre-wrap; }
+  .pending-dismiss {
+    margin-top: 8px; font-size: 12px; color: var(--muted); background: none;
+    border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px;
+    cursor: pointer; font-family: var(--font);
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .typing span { animation: none; }
   }
@@ -412,6 +452,20 @@
   #settings-test-push:disabled { opacity: .5; cursor: not-allowed; }
   #test-push-hint { font-size: 11px; color: var(--muted); line-height: 1.5; display: block; margin-top: 2px; }
 
+  #settings-view-db {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    padding: 11px;
+    cursor: pointer;
+    transition: border-color .2s, color .2s;
+  }
+  #settings-view-db:hover { border-color: var(--accent); color: var(--accent); }
+  #view-db-hint { font-size: 11px; color: var(--muted); line-height: 1.5; display: block; margin-top: 2px; }
+
   /* Settings icon button in header */
   #settings-btn {
     background: none;
@@ -450,8 +504,8 @@
       <div class="suggestion-chips">
         <div class="chip" onclick="sendSuggestion('Hôm nay tôi cần làm gì?')">📋 Việc hôm nay</div>
         <div class="chip" onclick="sendSuggestion('Nhắc tôi lúc 3h chiều họp')">⏰ Đặt nhắc nhở</div>
-        <div class="chip" onclick="sendSuggestion('Tóm tắt tin tức hôm nay')">📰 Tin tức</div>
-        <div class="chip" onclick="sendSuggestion('Tâm sự chút đi')">💬 Tâm sự</div>
+        <div class="chip" onclick="sendSuggestion('Lên lịch cho ngày mai')">🗓️ Lên lịch ngày mai</div>
+        <div class="chip" onclick="sendSuggestion('Tổng kết hôm nay')">📝 Tổng kết ngày</div>
       </div>
     </div>
   </div>
@@ -505,24 +559,30 @@ function showEmpty(show) {
   document.getElementById('empty').style.display = show ? 'flex' : 'none';
 }
 
-function appendMessage(role, text) {
+function appendMessage(role, text, extra) {
   if (!hasMessages) { showEmpty(false); hasMessages = true; }
 
   const msgs = document.getElementById('messages');
   const row = document.createElement('div');
   row.className = `msg-row ${role}`;
 
+  // Build bubble HTML. Nếu có schedule → ghép card Duyệt/Sửa vào cuối bubble.
+  let bubbleHtml = escapeHtml(text);
+  if (extra && extra.schedule) {
+    bubbleHtml += renderScheduleCard(extra.schedule);
+  }
+
   if (role === 'ai') {
     row.innerHTML = `
       <div class="msg-avatar">🤖</div>
       <div>
-        <div class="bubble">${escapeHtml(text)}</div>
+        <div class="bubble">${bubbleHtml}</div>
         <div class="msg-time">${now()}</div>
       </div>`;
   } else {
     row.innerHTML = `
       <div>
-        <div class="bubble">${escapeHtml(text)}</div>
+        <div class="bubble">${bubbleHtml}</div>
         <div class="msg-time">${now()}</div>
       </div>`;
   }
@@ -530,6 +590,60 @@ function appendMessage(role, text) {
   msgs.appendChild(row);
   msgs.scrollTop = msgs.scrollHeight;
   return row;
+}
+
+function renderScheduleCard(schedule) {
+  const slots = schedule.slots || [];
+  const sid = schedule.id;
+  const date = escapeHtml(schedule.date || '');
+  const slotHtml = slots.map(s =>
+    `<div class="slot"><span class="slot-time">${escapeHtml(s.time||'')}</span><span class="slot-title">${escapeHtml(s.title||'')}</span></div>`
+  ).join('');
+  return `
+    <div class="schedule-card" id="sched-${sid}">
+      <div class="sched-header">📋 Lịch ngày ${date}</div>
+      <div class="sched-slots">${slotHtml}</div>
+      <div class="sched-actions">
+        <button class="sched-btn approve" onclick="approveSchedule(${sid})">✅ Duyệt</button>
+        <button class="sched-btn edit" onclick="editSchedule(${sid})">✏️ Sửa</button>
+      </div>
+    </div>`;
+}
+
+async function approveSchedule(sid) {
+  try {
+    const res = await fetch('/approve-schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ schedule_id: sid })
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      const card = document.getElementById('sched-' + sid);
+      if (card) {
+        card.querySelectorAll('.sched-actions').forEach(a => a.remove());
+        const tag = document.createElement('div');
+        tag.className = 'sched-approved'; tag.textContent = '✓ Đã duyệt — đã tạo sự kiện + nhắc';
+        card.appendChild(tag);
+      }
+      showToast('Đã duyệt lịch ✓');
+    } else if (data.needs_regen) {
+      showToast('Hãy gửi yêu cầu sửa lại');
+    } else {
+      showToast(data.error || 'Duyệt thất bại');
+    }
+  } catch (e) {
+    showToast('Không kết nối được server');
+  }
+}
+
+function editSchedule(sid) {
+  const card = document.getElementById('sched-' + sid);
+  const date = card ? (card.querySelector('.sched-header')?.textContent || '') : '';
+  const input = document.getElementById('msg-input');
+  input.value = `Sửa lịch ${date}: `;
+  input.focus();
+  autoResize(input);
 }
 
 function showTyping() {
@@ -597,7 +711,7 @@ async function sendMessage() {
     });
     const data = await res.json();
     hideTyping();
-    appendMessage('ai', data.reply || 'Xin lỗi, có lỗi xảy ra.');
+    appendMessage('ai', data.reply || 'Xin lỗi, có lỗi xảy ra.', data.schedule || null);
   } catch (err) {
     hideTyping();
     appendMessage('ai', '⚠️ Không kết nối được server. Thử lại nhé.');
@@ -720,6 +834,9 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+// Tải báo cáo/tổng kết đang chờ (proactive jobs) khi mở app
+loadPending();
+
 // ── Settings ──────────────────────────────────────────────────────────
 function loadSettings() {
   return {
@@ -811,6 +928,59 @@ async function testPush() {
   }
 }
 
+// ── Pending reports (proactive reviews/planning) ───────────────────────
+const PENDING_LABEL = {
+  morning_planning: '📋 Lịch ngày',
+  daily_review: '📝 Tổng kết ngày',
+  weekly_review: '📅 Tổng kết tuần',
+  monthly_review: '🗓️ Tổng kết tháng',
+};
+
+async function loadPending() {
+  try {
+    const res = await fetch('/pending');
+    const data = await res.json();
+    const items = data.items || [];
+    if (!items.length) return;
+    showEmpty(false); hasMessages = true;
+    items.reverse().forEach(it => renderPending(it));
+  } catch (e) {
+    console.log('loadPending error:', e);
+  }
+}
+
+function renderPending(it) {
+  const msgs = document.getElementById('messages');
+  const row = document.createElement('div');
+  row.className = 'msg-row ai';
+  row.dataset.pendingId = it.id;
+  const label = PENDING_LABEL[it.type] || 'Trợ lý AI';
+  let inner = `<div class="pending-card">
+    <div class="pending-head">${label} ${escapeHtml(it.period || '')}</div>
+    <div class="pending-body">${escapeHtml(it.content || '')}</div>`;
+  // Nếu là morning_planning có slots → render schedule card (chưa duyệt).
+  if (it.type === 'morning_planning' && it.schedule_id && it.schedule_slots) {
+    inner += renderScheduleCard({id: it.schedule_id, date: it.period, slots: it.schedule_slots});
+  }
+  inner += `<div><button class="pending-dismiss" onclick="dismissPending(${it.id})">Đã xem</button></div></div>`;
+  row.innerHTML = `
+    <div class="msg-avatar">🤖</div>
+    <div><div class="bubble">${inner}</div><div class="msg-time">${now()}</div></div>`;
+  msgs.insertBefore(row, msgs.firstChild);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+async function dismissPending(id) {
+  try {
+    await fetch('/pending/read', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    const el = document.querySelector(`[data-pending-id="${id}"]`);
+    if (el) el.remove();
+  } catch (e) { console.log('dismiss error:', e); }
+}
+
 </script>
 
 <div id="settings-overlay" onclick="overlayClick(event)">
@@ -836,6 +1006,13 @@ async function testPush() {
       <label>THÔNG BÁO</label>
       <button id="settings-test-push" onclick="testPush()">🧪 Test thông báo (sau 30s)</button>
       <small id="test-push-hint">Bật 🔔 Thông báo trước, rồi bấm để nhận push thử sau 30 giây.</small>
+    </div>
+
+    <div class="setting-divider"></div>
+    <div class="setting-group">
+      <label>DỮ LIỆU</label>
+      <button id="settings-view-db" onclick="window.open('/db','_blank')">🗄️ Xem database (memory.db)</button>
+      <small id="view-db-hint">Mở trang xem tất cả bảng — task, goal, event, journal, nhắc... (che API key).</small>
     </div>
   </div>
 </div>
