@@ -293,6 +293,24 @@ def conv_recent(n: int = 20) -> list[dict]:
         ).fetchall()
         return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
 
+
+def conv_list(n: int = 100) -> list[dict]:
+    """Trả về N tin nhắn gần nhất, theo thứ tự cũ→mới (để frontend render lại lịch sử)."""
+    with db() as c:
+        rows = c.execute(
+            "SELECT role, content, created_at FROM conversations ORDER BY id DESC LIMIT ?", (n,)
+        ).fetchall()
+        return [
+            {"role": r["role"], "content": r["content"], "created_at": r["created_at"]}
+            for r in reversed(rows)
+        ]
+
+
+def conv_clear():
+    """Xoá toàn bộ lịch sử chat (dùng cho nút Reset đoạn chat)."""
+    with db() as c:
+        c.execute("DELETE FROM conversations")
+
 # ── User profile / Life OS state / App config (single-row tables) ───────────
 def profile_get() -> dict:
     with db() as c:
@@ -1490,6 +1508,20 @@ async def chat(request: Request):
 
 
 
+@app.get("/history")
+async def history():
+    """Trả về lịch sử chat để frontend khôi phục khi mở lại app (không mất khi restart)."""
+    return JSONResponse({"items": conv_list(100)})
+
+
+@app.post("/reset-chat")
+async def reset_chat():
+    """Xoá toàn bộ lịch sử chat (nút Reset trong Settings)."""
+    conv_clear()
+    return JSONResponse({"ok": True})
+
+
+
 def _split_thinking(text: str):
     """Tách block thinking/reasoning bị proxy leak ra khỏi content.
     Trả (clean_text, [thoughts]). Hỗ trợ: block cân bằng, open không close
@@ -1588,40 +1620,6 @@ def send_push(title: str, body: str) -> dict:
     for d in dead:
         push_subscriptions.remove(d)
     return summary
-
-
-# ── Route: Test push (gửi 1 thông báo thử để kiểm tra) ─────────────────────
-@app.get("/test-push")
-async def test_push():
-    if not _VAPID_INSTANCE:
-        return JSONResponse({"error": "VAPID private key chưa nạp được (kiểm tra PEM trong .env)"}, status_code=500)
-    if not push_subscriptions:
-        return JSONResponse({"error": "Chưa có thiết bị nào đăng ký nhận thông báo. Hãy mở app, bật thông báo trước."}, status_code=400)
-    return JSONResponse(send_push("🧪 Kiểm tra", "Thông báo thử từ server"))
-
-# ── Route: Test push có trì hoãn (lên lịch gửi sau N giây) ─────────────────
-@app.post("/test-push-delayed")
-async def test_push_delayed(request: Request):
-    data = await request.json() if request.headers.get("content-type") == "application/json" else {}
-    delay = data.get("delay", 5)
-    try:
-        delay = int(delay)
-        if delay < 1 or delay > 3600:
-            delay = 5
-    except (TypeError, ValueError):
-        delay = 5
-
-    if not _VAPID_INSTANCE:
-        return JSONResponse({"error": "VAPID private key chưa nạp được (kiểm tra PEM trong .env)"}, status_code=500)
-    if not push_subscriptions:
-        return JSONResponse({"error": "Chưa có thiết bị nào đăng ký. Hãy bấm 🔔 Thông báo trên app trước."}, status_code=400)
-
-    run_at = datetime.now(TZ) + timedelta(seconds=delay)
-    scheduler.add_job(
-        lambda: send_push("🧪 Kiểm tra", f"Thông báo thử (sau {delay}s)"),
-        'date', run_date=run_at,
-    )
-    return JSONResponse({"status": "scheduled", "in_seconds": delay})
 
 
 # ── Route: Phê duyệt lịch ngày (Morning Planning) ──────────────────────────

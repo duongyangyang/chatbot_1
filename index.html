@@ -479,7 +479,7 @@
     background: var(--border);
     margin: 4px 0;
   }
-  #settings-test-push {
+  #settings-reset-chat {
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 12px;
@@ -490,9 +490,9 @@
     cursor: pointer;
     transition: border-color .2s, color .2s;
   }
-  #settings-test-push:hover { border-color: var(--accent); color: var(--accent); }
-  #settings-test-push:disabled { opacity: .5; cursor: not-allowed; }
-  #test-push-hint { font-size: 11px; color: var(--muted); line-height: 1.5; display: block; margin-top: 2px; }
+  #settings-reset-chat:hover { border-color: #ef4444; color: #ef4444; }
+  #settings-reset-chat:disabled { opacity: .5; cursor: not-allowed; }
+  #reset-chat-hint { font-size: 11px; color: var(--muted); line-height: 1.5; display: block; margin-top: 2px; }
 
   #settings-view-db {
     background: var(--bg);
@@ -624,13 +624,13 @@ function appendMessage(role, text, extra) {
       <div class="msg-avatar"><img src="/static/icon.jpg" alt="Kim" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"></div>
       <div>
         <div class="bubble">${bubbleHtml}</div>
-        <div class="msg-time">${now()}</div>
+        <div class="msg-time">${(extra && extra.time) || now()}</div>
       </div>`;
   } else {
     row.innerHTML = `
       <div>
         <div class="bubble">${bubbleHtml}</div>
-        <div class="msg-time">${now()}</div>
+        <div class="msg-time">${(extra && extra.time) || now()}</div>
       </div>`;
   }
 
@@ -989,6 +989,29 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+// Tải lịch sử chat từ server (SQLite) khi mở app — không mất khi restart.
+async function loadHistory() {
+  try {
+    const res = await fetch('/history');
+    const data = await res.json();
+    const items = data.items || [];
+    if (!items.length) return;
+    showEmpty(false); hasMessages = true;
+    for (const it of items) {
+      const role = it.role === 'assistant' ? 'ai' : 'me';
+      let time = '';
+      try { time = new Date(it.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }); }
+      catch (e) {}
+      appendMessage(role, it.content || '', time ? { time } : undefined);
+    }
+    const msgs = document.getElementById('messages');
+    msgs.scrollTop = msgs.scrollHeight;
+  } catch (e) {
+    console.log('loadHistory error:', e);
+  }
+}
+loadHistory();
+
 // Tải báo cáo/tổng kết đang chờ (proactive jobs) khi mở app
 loadPending();
 
@@ -1045,40 +1068,26 @@ function checkConfigOnStart() {
 }
 checkConfigOnStart();
 
-// Test thông báo: lên lịch server gửi push sau 5s
-async function testPush() {
-  const btn = document.getElementById('settings-test-push');
+// Reset đoạn chat: xoá lịch sử trên server + xoá tin nhắn trên màn hình.
+async function resetChat() {
+  const btn = document.getElementById('settings-reset-chat');
+  if (!confirm('Xoá toàn bộ đoạn chat? Hành động không thể hoàn tác.')) return;
   btn.disabled = true;
-  const original = btn.textContent;
   try {
-    const res = await fetch('/test-push-delayed', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ delay: 30 })
-    });
-    const data = await res.json();
+    const res = await fetch('/reset-chat', { method: 'POST' });
     if (res.ok) {
-      showToast('Sẽ gửi thông báo sau 5s ✓');
-      // Đếm ngược để user biết khi nào push tới
-      let left = 5;
-      btn.textContent = '⏳ Gửi sau ' + left + 's...';
-      const timer = setInterval(() => {
-        left--;
-        if (left <= 0) {
-          clearInterval(timer);
-          btn.disabled = false;
-          btn.textContent = original;
-        } else {
-          btn.textContent = '⏳ Gửi sau ' + left + 's...';
-        }
-      }, 300);
+      document.getElementById('messages').innerHTML = '';
+      hasMessages = false;
+      showEmpty(true);
+      closeSettings();
+      showToast('Đã xoá đoạn chat ✓');
     } else {
-      showToast(data.error || 'Không lên lịch được');
-      btn.disabled = false;
+      showToast('Xoá thất bại');
     }
   } catch (e) {
-    console.log('Test push error:', e);
+    console.log('resetChat error:', e);
     showToast('Không kết nối được server');
+  } finally {
     btn.disabled = false;
   }
 }
@@ -1164,9 +1173,9 @@ setInterval(() => {
 
     <div class="setting-divider"></div>
     <div class="setting-group">
-      <label>THÔNG BÁO</label>
-      <button id="settings-test-push" onclick="testPush()">🧪 Test thông báo (sau 30s)</button>
-      <small id="test-push-hint">Bật 🔔 Thông báo trước, rồi bấm để nhận push thử sau 30 giây.</small>
+      <label>ĐOẠN CHAT</label>
+      <button id="settings-reset-chat" onclick="resetChat()">🗑️ Xoá toàn bộ đoạn chat</button>
+      <small id="reset-chat-hint">Xoá lịch sử chat đang lưu trên server. Hành động không hoàn tác.</small>
     </div>
 
     <div class="setting-divider"></div>
