@@ -14,8 +14,10 @@ import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from pywebpush import webpush, WebPushException
 
-# Tải biến môi trường từ .env (nếu có) trước khi đọc cấu hình
+# Tải biến môi trường từ .env (nếu có) trước khi đọc cấu hình.
+# Tìm cả ở cwd và cạnh file main.py để chắc chắn nạp được dù chạy từ thư mục khác.
 load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 app = FastAPI()
 
@@ -66,6 +68,16 @@ async def vapid_public_key():
             status_code=500,
         )
     return JSONResponse({"publicKey": VAPID_PUBLIC})
+
+# ── Route: Debug push (kiểm tra trạng thái VAPID + số thiết bị đã đăng ký) ──
+@app.get("/debug-push")
+async def debug_push():
+    return JSONResponse({
+        "vapid_public_set": bool(VAPID_PUBLIC),
+        "vapid_private_set": bool(VAPID_PRIVATE),
+        "vapid_email": VAPID_EMAIL,
+        "subscribers": len(push_subscriptions),
+    })
 
 # ── Route: Chat ───────────────────────────────────────────────────────────
 @app.post("/chat")

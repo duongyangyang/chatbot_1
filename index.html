@@ -647,31 +647,34 @@ async function toggleNotification() {
     return;
   }
 
-  // Đã được cấp quyền → đảm bảo đã subscribe (trường hợp cấp trước đó nhưng chưa đăng ký)
-  if (Notification.permission === 'granted') {
-    btn.className = 'enabled';
-    btn.textContent = '🔔 Đã bật';
-    await subscribeToNotifications();
-    return;
+  // Chưa có quyền → xin quyền (iOS bắt buộc từ cử chỉ người dùng)
+  if (Notification.permission !== 'granted') {
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      showToast('Bạn đã tắt thông báo trong trình duyệt');
+      return;
+    }
   }
 
-  // iOS bắt buộc requestPermission gọi trực tiếp từ cử chỉ người dùng (click)
-  const permission = await Notification.requestPermission();
-  if (permission === 'granted') {
-    btn.className = 'enabled';
-    btn.textContent = '🔔 Đã bật';
+  // Đã có quyền → đăng ký subscription. Chỉ bật nút xanh khi thành công.
+  const ok = await subscribeToNotifications();
+  if (ok) {
+    setNotifBtn(true);
     showToast('Đã bật thông báo ✓');
-    await subscribeToNotifications();
-  } else {
-    showToast('Bạn đã tắt thông báo trong trình duyệt');
   }
+}
+
+function setNotifBtn(on) {
+  const btn = document.getElementById('notif-btn');
+  if (on) { btn.className = 'enabled'; btn.textContent = '🔔 Đã bật'; }
+  else    { btn.className = '';          btn.textContent = '🔔 Thông báo'; }
 }
 
 async function subscribeToNotifications() {
   const key = await getVapidPublicKey();
   if (!key) {
-    showToast('Server chưa cấu hình VAPID key');
-    return;
+    showToast('Không lấy được VAPID key. Mở /debug-push trên server để kiểm tra.');
+    return false;
   }
   try {
     swRegistration = await navigator.serviceWorker.ready;
@@ -683,14 +686,18 @@ async function subscribeToNotifications() {
         applicationServerKey: urlBase64ToUint8Array(key)
       });
     }
-    await fetch('/subscribe', {
+    const res = await fetch('/subscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(subscription)
     });
+    if (!res.ok) throw new Error('server trả ' + res.status + ' khi đăng ký');
+    return true;
   } catch (e) {
     console.log('Push subscription error:', e);
-    showToast('Không thể đăng ký thông báo');
+    const msg = String(e && e.message || e);
+    showToast('Đăng ký thất bại: ' + msg);
+    return false;
   }
 }
 
@@ -706,10 +713,9 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').then(async reg => {
     swRegistration = reg;
     if (Notification.permission === 'granted' && isStandalone()) {
-      document.getElementById('notif-btn').className = 'enabled';
-      document.getElementById('notif-btn').textContent = '🔔 Đã bật';
-      // Khôi phục subscription sau khi SW sẵn sàng
-      await subscribeToNotifications();
+      // Chỉ bật nút xanh khi đăng ký subscription thành công
+      const ok = await subscribeToNotifications();
+      if (ok) setNotifBtn(true);
     }
   });
 }
