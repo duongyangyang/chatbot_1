@@ -71,7 +71,7 @@ def _now_iso() -> str:
 _DEFAULT_PROFILE = {
     "ten":      "Nguyễn Hoàng Dương hoặc yangd hoặc rhy",
     "nghe":     "Sinh viên đẹp trai",
-    "so_thich":"đánh cầu, chụp ảnh",
+    "so_thich": "đánh cầu, chụp ảnh",
     "khu_vuc":  "đang ở Thượng Hải, quê nhà Hà Nội",
     "ghi_chu":  "Nói chuyện cute đáng yêu. Sử dụng tối đa 2 icons trong phản hồi.",
 }
@@ -1404,12 +1404,16 @@ async def chat(request: Request):
             # Giữ nguyên assistant message (kèm tool_calls) để gửi lại vòng sau.
             messages.append(msg.model_dump(exclude_none=True))
 
-            # Nếu model viết lời dẫn kèm tool_calls → ghi là "thought".
+            # Nếu model viết lời dẫn/thinking kèm tool_calls → ghi là "thought".
             if msg.content and msg.tool_calls:
-                trace.append({"kind": "thought", "text": (msg.content or "").strip()[:400]})
+                clean_c, ths = _split_thinking(msg.content)
+                for t in ths + ([clean_c] if clean_c else []):
+                    trace.append({"kind": "thought", "text": t[:400]})
 
             if not msg.tool_calls:
-                reply = (msg.content or "").strip()
+                reply, ths = _split_thinking(msg.content or "")
+                for t in ths:
+                    trace.append({"kind": "thought", "text": t[:400]})
                 break
 
             # Chạy từng tool call, đút kết quả về role "tool" + ghi trace.
@@ -1435,6 +1439,9 @@ async def chat(request: Request):
                 None,
             )
             reply = (last["content"] if last else "").strip() or "⚠️ Quá nhiều bước, thử lại nhé."
+            reply, ths = _split_thinking(reply)
+            for t in ths:
+                trace.append({"kind": "thought", "text": t[:400]})
 
         # Fallback: model có thể vẫn dùng thẻ <reminder> thay vì tool set_reminder
         # (hoặc proxy strip tools). Vẫn xử lý như cũ.
@@ -1475,6 +1482,45 @@ async def chat(request: Request):
 
     except Exception as e:
         return JSONResponse({"reply": f"Lỗi: {str(e)}"}, status_code=500)
+
+
+
+def _split_thinking(text: str):
+    """Tách block thinking/reasoning bị proxy leak ra khỏi content.
+    Trả (clean_text, [thoughts]). Hỗ trợ: block cân bằng, open không close
+    (leak đến cuối), close không open (proxy strip open)."""
+    import re
+    thoughts = []
+    if not text:
+        return text, []
+    names = "think|thinking|reasoning|thought|analysis|reason"
+    # 1) block cân bằng: <tag>...</tag>  (\1 backref khớp tên tag)
+    pat_bal = re.compile("<(" + names + r")(\s[^>]*)?>(.*?)</\1\s*>", re.I | re.S)
+    def _bal(m):
+        inner = m.group(3).strip()
+        if inner:
+            thoughts.append(inner)
+        return ""
+    text = pat_bal.sub(_bal, text)
+    # 1b) <|thinking|>...</|/thinking|>
+    pat_pipe = re.compile(r"<\|thinking\|>(.*?)<\|/thinking\|>", re.S)
+    text = pat_pipe.sub(lambda m: (thoughts.append(m.group(1).strip()), "")[1], text)
+    # 2) open không có close -> leak đến cuối: phần còn lại là thinking
+    pat_open = re.compile("<(" + names + r")(\s[^>]*)?>(.*)$", re.I | re.S)
+    m = pat_open.search(text)
+    if m and m.group(3).strip():
+        thoughts.append(m.group(3).strip())
+        text = text[:m.start()]
+    # 3) close không có open -> proxy strip open: phần trước close là thinking
+    pat_close = re.compile("</(" + names + r")\s*>", re.I)
+    m = pat_close.search(text)
+    if m:
+        before = text[:m.start()].strip()
+        if before:
+            thoughts.append(before)
+        text = text[m.end():]
+    return text.strip(), thoughts
+
 
 
 def extract_reminder(text: str) -> Optional[dict]:
@@ -1760,6 +1806,9 @@ def _run_proactive_job(job_type: str, dry: bool = False) -> dict:
         else:
             last = next((m for m in reversed(messages) if m.get("role") == "assistant" and m.get("content")), None)
             reply = (last["content"] if last else "").strip() or "(không có nội dung)"
+
+        # Bỏ thinking tag bị leak, rồi mới xử lý marker + lưu report.
+        reply, _ = _split_thinking(reply)
 
         # Bắt schedule_id từ marker nếu model đã gọi generate_schedule.
         m_sched = re.search(r'<<<SCHEDULE\s+id="(\d+)"\s*>>>', reply)
