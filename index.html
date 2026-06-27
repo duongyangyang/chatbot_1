@@ -369,7 +369,10 @@
   .md-icode { background: #0a0a0a; border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-family: ui-monospace,Menlo,monospace; font-size: 12px; }
   .md-code { background: #0a0a0a; border: 1px solid var(--border); border-radius: 8px; padding: 10px; overflow-x: auto; margin: 6px 0; }
   .md-code code { font-family: ui-monospace,Menlo,monospace; font-size: 12px; white-space: pre; color: #d6e4ff; }
-  .md-table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; overflow-x: auto; }
+  .md-table { width: 100%; border-collapse: collapse; margin: 12px 0; overflow-x: auto; }
+  .md-table.cols-3 { font-size: 13px; }
+  .md-table.cols-5 { font-size: 8px; }
+  .md-table.cols-6plus { font-size: 6px; }
   .md-table th, .md-table td { padding: 8px 12px; border: 1px solid var(--border); text-align: left; }
   .md-table th { background: var(--surface); font-weight: 500; }
   .md-table tr:hover { background: rgba(79, 142, 247, 0.05); }
@@ -608,8 +611,9 @@ function appendMessage(role, text, extra) {
   // Build bubble HTML. AI reply render markdown; ghép trace + schedule card.
   let bubbleHtml;
   if (role === 'ai') {
-    bubbleHtml = renderMarkdown(text);
+    bubbleHtml = '';
     if (extra && extra.trace) bubbleHtml += renderTrace(extra.trace);
+    bubbleHtml += renderMarkdown(text);
     if (extra && extra.schedule) bubbleHtml += renderScheduleCard(extra.schedule);
   } else {
     bubbleHtml = escapeHtml(text);
@@ -746,7 +750,13 @@ function parseMarkdownTable(src) {
 
   if (!/^[\s|:\-]+$/.test(sepLine)) return src;
 
-  let html = '<table class="md-table"><thead><tr>';
+  const colCount = headerCells.length;
+  let colClass = 'cols-3';
+  if (colCount <= 3) colClass = 'cols-3';
+  else if (colCount <= 5) colClass = 'cols-5';
+  else colClass = 'cols-6plus';
+
+  let html = `<table class="md-table ${colClass}"><thead><tr>`;
   for (const h of headerCells) {
     html += '<th>' + _mdInline(h) + '</th>';
   }
