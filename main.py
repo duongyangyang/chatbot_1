@@ -46,14 +46,78 @@ chat_history: list[dict] = []
 push_subscriptions: list[dict] = []
 reminders: list[dict] = []
 
-# ── System prompt ────────────────────────────────────────────────────────
-SYSTEM_PROMPT = """Bạn là trợ lý AI cá nhân thân thiết của tôi.
+# ── Thông tin cá nhân (BẠN SỬA Ở ĐÂY) ───────────────────────────────────
+# Điền thông tin của bạn vào các giá trị bên dưới. Chưa biết thì để "".
+USER_PROFILE = {
+    "ten":        "Nguyễn Hoàng Dương hoặc yangd hoặc rhy",   # ví dụ: "Dương"
+    "nghe":       "Sinh viên đẹp trai",   # ví dụ: "giám đốc / sinh viên / kỹ sư"
+    "so_thich":   "đánh cầu, chụp ảnh",   # ví dụ: "cà phê, chạy bộ, đọc sách, du lịch"
+    "khu_vuc":    "đang ở Thượng Hải, quê nhà Hà Nội",   # ví dụ: "Thượng Hải, Trung Quốc"
+    "ghi_chu":    "Nói chuyện cute đáng yêu",   # thêm gì tùy thích, ví dụ: "dậy sớm 6h, ngôn ngữ V-AI"
+}
+
+# ── System prompt (template, được bơm thông tin + thời gian thực mỗi request) ─
+SYSTEM_PROMPT_TEMPLATE = """Bạn là trợ lý AI cá nhân thân thiết của tôi.
 Vai trò: như một trợ lý giám đốc thực sự — quản lý lịch, nhắc nhở, task, tóm tắt thông tin.
-Tính cách: thông minh, gần gũi, thi thoảng hài hước nhẹ nhàng. 
-Ngôn ngữ: tiếng Việt, tự nhiên như bạn bè.
+Tính cách: thông minh, gần gũi, thi thoảng hài hước nhẹ nhàng.
+Ngôn ngữ: tiếng Việt, tự nhiên.
+
+# Thông tin về tôi
+- Tên: {ten}
+- Nghề nghiệp: {nghe}
+- Sở thích: {so_thich}
+- Khu vực: {khu_vuc}
+- Ghi chú: {ghi_chu}
+Những trường "(chưa rõ)" là vì tôi chưa điền — đừng đoán, cứ hỏi lại nếu cần.
+
+# Nhận thức thời gian / thế giới
+- Hiện tại: {now} ({weekday}), {date_full}
+- Múi giờ: Asia/Shanghai (UTC+8)
+- Mùa: {season} (Bắc bán cầu)
+Căn cứ vào thời gian thực trên để tính "sáng/chiều/tối", "hôm nay/ngày mai/tuần sau",
+thứ trong tuần, cuối tuần, v.v. khi đặt nhắc nhở hoặc trả lời. Khi nhắc thời gian
+cho user, dùng múi giờ Asia/Shanghai.
+
+# Đặt nhắc nhở
 Nếu user muốn đặt nhắc nhở, trả về JSON trong thẻ <reminder>:
-<reminder>{"time": "HH:MM", "date": "YYYY-MM-DD", "message": "nội dung nhắc"}</reminder>
+<reminder>{{"time": "HH:MM", "date": "YYYY-MM-DD", "message": "nội dung nhắc"}}</reminder>
 Phần còn lại trả lời bình thường."""
+
+# Thứ trong tuần theo tiếng Việt (Monday=0 ...)
+_WEEKDAYS_VI = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm",
+                "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"]
+
+
+def _season_vi(month: int) -> str:
+    """Mùa theo Bắc bán cầu."""
+    if month in (3, 4, 5):
+        return "Xuân"
+    if month in (6, 7, 8):
+        return "Hè"
+    if month in (9, 10, 11):
+        return "Thu"
+    return "Đông"
+
+
+def build_system_prompt() -> str:
+    """Bơm thông tin cá nhân + thời gian thực (Asia/Shanghai) vào system prompt."""
+    try:
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo("Asia/Shanghai"))
+    except Exception:
+        # Fallback: giờ máy nếu không có tzdata (không mong đợi trên server).
+        now = datetime.now()
+    return SYSTEM_PROMPT_TEMPLATE.format(
+        ten=USER_PROFILE["ten"] or "(chưa rõ)",
+        nghe=USER_PROFILE["nghe"] or "(chưa rõ)",
+        so_thich=USER_PROFILE["so_thich"] or "(chưa rõ)",
+        khu_vuc=USER_PROFILE["khu_vuc"] or "(chưa rõ)",
+        ghi_chu=USER_PROFILE["ghi_chu"] or "(không)",
+        now=now.strftime("%H:%M"),
+        weekday=_WEEKDAYS_VI[now.weekday()],
+        date_full=f"{now.day}/{now.month}/{now.year}",
+        season=_season_vi(now.month),
+    )
 
 # ── Routes: Static files ─────────────────────────────────────────────────
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -155,7 +219,7 @@ async def chat(request: Request):
         response = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": build_system_prompt()},
                 *history,
             ],
             max_tokens=1000,
