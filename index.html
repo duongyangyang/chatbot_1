@@ -1045,7 +1045,7 @@ function checkConfigOnStart() {
 }
 checkConfigOnStart();
 
-// Test thông báo: lên lịch server gửi push sau 30s
+// Test thông báo: lên lịch server gửi push sau 5s
 async function testPush() {
   const btn = document.getElementById('settings-test-push');
   btn.disabled = true;
@@ -1058,9 +1058,9 @@ async function testPush() {
     });
     const data = await res.json();
     if (res.ok) {
-      showToast('Sẽ gửi thông báo sau 30s ✓');
+      showToast('Sẽ gửi thông báo sau 5s ✓');
       // Đếm ngược để user biết khi nào push tới
-      let left = 30;
+      let left = 5;
       btn.textContent = '⏳ Gửi sau ' + left + 's...';
       const timer = setInterval(() => {
         left--;
@@ -1071,7 +1071,7 @@ async function testPush() {
         } else {
           btn.textContent = '⏳ Gửi sau ' + left + 's...';
         }
-      }, 1000);
+      }, 300);
     } else {
       showToast(data.error || 'Không lên lịch được');
       btn.disabled = false;

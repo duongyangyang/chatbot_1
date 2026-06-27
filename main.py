@@ -1603,13 +1603,13 @@ async def test_push():
 @app.post("/test-push-delayed")
 async def test_push_delayed(request: Request):
     data = await request.json() if request.headers.get("content-type") == "application/json" else {}
-    delay = data.get("delay", 10)
+    delay = data.get("delay", 5)
     try:
         delay = int(delay)
         if delay < 1 or delay > 3600:
-            delay = 30
+            delay = 5
     except (TypeError, ValueError):
-        delay = 30
+        delay = 5
 
     if not _VAPID_INSTANCE:
         return JSONResponse({"error": "VAPID private key chưa nạp được (kiểm tra PEM trong .env)"}, status_code=500)
