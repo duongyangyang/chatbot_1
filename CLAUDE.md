@@ -6,6 +6,70 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A single-user PWA personal AI life & work assistant ("Trợ lý AI" / "Life OS"), in Vietnamese. A FastAPI backend serves a self-contained `index.html` SPA and proxies chat to an OpenAI-compatible endpoint, with **native function-calling tools** (time, task CRUD, events, goals, journals, memory search, schedule generation/approval, reviews, profile updates). Conversations, tasks, events, goals, journals, memory, reports, and schedules are persisted in **SQLite** (`memory.db`); only push subscriptions stay in RAM. The app is installable (manifest + service worker), supports scheduled Web Push notifications, and runs **proactive scheduled jobs** (morning planning, daily/weekly/monthly review) that call the LLM server-side, store a report, push a nudge, and surface in-app on next open. A `/db` viewer lets the (non-technical) user read the database in a browser.
 
+## Tổng kết nhanh (bản hiện tại)
+
+Một assistant AI cá nhân dạng PWA, giao tiếp hoàn toàn bằng chat tiếng Việt, có trí nhớ dài hạn và vòng lặp **Mục tiêu → Kế hoạch → Thực hiện → Đánh giá → Điều chỉnh**. Phạm vi MVP đã hoàn thành:
+
+- **Chat tự nhiên** + agent loop function-calling (`MAX_TOOL_ROUNDS=8`), lịch sử lưu SQLite.
+- **Task** (CRUD + priority/deadline), **Event** (lịch hẹn, tự đặt nhắc push), **Goal** phân tầng năm→tháng→tuần (qua `parent_id`).
+- **Morning Planning**: model gọi `generate_schedule` → lưu nháp → frontend render card **Duyệt/Sửa** (marker `<<<SCHEDULE id="..">>>`). Chỉ khi user bấm Duyệt mới tạo events + nhắc (human-in-the-loop).
+- **Daily/Weekly/Monthly Review**: 4 cron job chạy server-side, sinh báo cáo → lưu `reports` → push nudge → hiện trong app khi mở (`/pending` + `loadPending`).
+- **Memory**: nhật ký (mood/tags), long-term memory, `search_memory` (LIKE, không vector DB), `user_profile` + `life_os_state` lưu DB sửa qua chat.
+- **Push notification** (Web Push/VAPID), **PWA** installable, **DB viewer** `/db`.
+- **Không có**: multi-user, vector DB, agent framework, RAG phức tạp, web search/weather (deferred).
+
+Trạng thái xác minh: đã test tool dispatch, DB, routes, cron registration, masking; **chưa test luồng LLM thật** (không có API key thật trên máy dev). Khi set key thật + chat 1 lần → chạy `/debug-proactive?job=morning_planning&dry=true` để confirm.
+
+## DB schema (`memory.db`)
+
+| Bảng | Cột chính | Ghi chú |
+|---|---|---|
+| `tasks` | id, title, note, due_at, priority, status, created_at | open/done |
+| `reminders` | id, run_at, message, fired, source | source ∈ manual/event/schedule; mọi nhắc (kể cả event/schedule) đều ở đây |
+| `conversations` | id, role, content, created_at | lịch sử chat, `conv_recent(20)` |
+| `events` | id, title, note, start_at, end_at, location, all_day, status, source, schedule_id, created_at | sự kiện/lịch hẹn |
+| `goals` | id, title, description, level, period, parent_id, status, progress_note, created_at | level ∈ year/month/week |
+| `journals` | id, mood, content, tags, created_at | nhật ký + tâm trạng |
+| `long_term_memory` | id, content, confidence, source, created_at, last_used_at | `add_journal` tự lưu 1 row |
+| `user_profile` | id=1, ten, nghe, so_thich, khu_vuc, ghi_chu, updated_at | single-row, sửa qua `update_profile` |
+| `life_os_state` | id=1, current_life_phase, top_3_priorities, current_risks, updated_at | single-row, đọc đầu tiên khi planning/review |
+| `reports` | id, type, period, content, schedule_id, read, pushed, created_at | output proactive, unread→`/pending` |
+| `schedules` | id, date, slots(JSON), status, created_at, approved_at | draft → approved qua `/approve-schedule` |
+| `app_config` | id=1, base_url, model, api_key_hint, updated_at | last-used config; **api_key_hint CHE ở mọi GET** (`***`) |
+
+`db_init()` tạo bảng + seed 3 single-row (user_profile, life_os_state, app_config) trên startup.
+
+## Routes
+
+| Method | Path | Mục đích |
+|---|---|---|
+| GET | `/`, `/index.html`, `/sw.js`, `/manifest.json` | SPA + service worker + manifest |
+| POST | `/chat` | chat chính (agent loop, persist config, parse schedule marker) |
+| POST | `/subscribe` | đăng ký Web Push subscription (RAM) |
+| GET | `/vapid-public-key` | public key cho `pushManager.subscribe` |
+| GET | `/test-push` · POST `/test-push-delayed` | gửi/thử push |
+| POST | `/approve-schedule` | user bấm Duyệt → tạo events + nhắc |
+| GET | `/pending` · POST `/pending/read` | báo cáo chưa đọc + đánh dấu đã xem |
+| GET | `/db` · `/debug-db` | xem DB (HTML / JSON, che API key) |
+| GET | `/debug-push` `/debug-tools` `/debug-reminders` `/debug-proactive` `/debug-state` · `/vapid-public-key` | debug (JSON) |
+
+`/debug-proactive?job=<morning_planning|daily_review|weekly_review|monthly_review>&dry=true` — chạy job ngay không push, cách chính test proactive.
+
+## Tools (function-calling, 20)
+
+| Nhóm | Tools |
+|---|---|
+| Thời gian | `get_current_time` |
+| Task | `create_task`, `list_tasks`, `complete_task`, `update_task`, `delete_task` |
+| Event/Reminder | `create_event` (tự đặt nhắc), `list_events`, `set_reminder` |
+| Goal | `create_goal`, `list_goals`, `update_goal` |
+| Journal/Memory | `add_journal`, `search_memory` (LIKE qua memory+journal+chat) |
+| Life OS | `get_life_state` (đọc đầu), `update_profile` |
+| Lịch | `generate_schedule` (lưu nháp, trả id); `apply_schedule` **không** là tool — chỉ UI |
+| Review | `daily_review`, `weekly_review`, `monthly_review` (trả context bundle) |
+
+Mỗi tool trả **string** đút lại role `tool`. `_run_tool` truyền hết args nếu fn có `**kwargs`.
+
 ## Commands
 
 ```bash
@@ -43,9 +107,9 @@ There is no test suite, linter, or formatter configured. Verify changes by runni
 
 **Push data flow**: `.env` VAPID keys loaded via `python-dotenv` → at startup a `Vapid` object is built from the PEM private key → client fetches `GET /vapid-public-key` → `subscribeToNotifications()` calls `pushManager.subscribe({applicationServerKey})` → POSTs subscription to `/subscribe` → `send_push()` / scheduled reminders sign with the `Vapid` object and POST to each subscription's endpoint (Apple/Google/Mozilla push service) → `sw.js` `push` handler shows the notification. On iOS this only works when the app is installed to the Home Screen (standalone) on iOS 16.4+; the client guards for this.
 
-**`index.html`** — the full SPA (markup + CSS + JS inline). Config (base URL, API key, model) is in `localStorage` (`cfg_baseurl` / `cfg_apikey` / `cfg_model`) and posted to `/chat` each message. The settings modal is the only way to enter credentials; `isConfigured()` gates sending. The 🔔 button fetches `/vapid-public-key` into `window.VAPID_PUBLIC_KEY`, subscribes, and only turns green after the subscription POST succeeds (earlier versions turned green prematurely, masking failures). SW registration auto-re-subscribes on page load if permission is granted and the app is standalone.
+**`index.html`** — the full SPA (markup + CSS + JS inline). Config (base URL, API key, model) is in `localStorage` (`cfg_baseurl` / `cfg_apikey` / `cfg_model`) and posted to `/chat` each message. The settings modal is the only way to enter credentials; `isConfigured()` gates sending. The 🔔 button fetches `/vapid-public-key` into `window.VAPID_PUBLIC_KEY`, subscribes, and only turns green after the subscription POST succeeds (earlier versions turned green prematurely, masking failures). SW registration auto-re-subscribes on page load if permission is granted and the app is standalone. **AI replies are rendered as markdown** via a small inline `renderMarkdown()` (headings, bold/italic, lists, inline + block code, links) — no dep. **`/chat` also returns a `trace` array** (`{kind:"thought"|"tool", name, args, result}`) which `renderTrace()` shows as collapsible 🔧 tool-call chips + 💭 thought lines (like Claude/Codex); the API doesn't expose reasoning tokens, so "thinking" = the visible tool-call sequence + any assistant text emitted between calls.
 
-**`sw.js`** — service worker. Precaches `['/', '/index.html', '/manifest.json']` **per-file** (not `addAll` — a single 404 must not break install); cache version `assistant-v3`. Network-first fetch with cache fallback, plus `push` / `notificationclick` handlers (Vietnamese copy). Bump the version whenever `index.html`/`sw.js` change so clients invalidate the stale SW.
+**`sw.js`** — service worker. Precaches `['/', '/index.html', '/manifest.json']` **per-file** (not `addAll` — a single 404 must not break install); cache version `assistant-v4`. Network-first fetch with cache fallback, plus `push` / `notificationclick` handlers (Vietnamese copy). Bump the version whenever `index.html`/`sw.js` change so clients invalidate the stale SW.
 
 **`manifest.json`** — PWA manifest; theme `#0f0f0f`, `display: standalone`. Icons (`icon-192.png`, `icon-512.png`) are referenced but not present in the repo.
 

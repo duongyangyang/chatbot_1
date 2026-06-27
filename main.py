@@ -73,7 +73,7 @@ _DEFAULT_PROFILE = {
     "nghe":     "Sinh viên đẹp trai",
     "so_thich":"đánh cầu, chụp ảnh",
     "khu_vuc":  "đang ở Thượng Hải, quê nhà Hà Nội",
-    "ghi_chu":  "Nói chuyện cute đáng yêu",
+    "ghi_chu":  "Nói chuyện cute đáng yêu. Sử dụng tối đa 2 icons trong phản hồi.",
 }
 
 
@@ -1391,6 +1391,7 @@ async def chat(request: Request):
 
         # Agent loop: model có thể gọi tool → chạy → đút kết quả → gọi lại.
         reply = ""
+        trace = []  # hiển thị tool calls/thinking cho frontend (giống Claude/Codex)
         for _ in range(MAX_TOOL_ROUNDS):
             response = client.chat.completions.create(
                 model=model,
@@ -1403,11 +1404,15 @@ async def chat(request: Request):
             # Giữ nguyên assistant message (kèm tool_calls) để gửi lại vòng sau.
             messages.append(msg.model_dump(exclude_none=True))
 
+            # Nếu model viết lời dẫn kèm tool_calls → ghi là "thought".
+            if msg.content and msg.tool_calls:
+                trace.append({"kind": "thought", "text": (msg.content or "").strip()[:400]})
+
             if not msg.tool_calls:
                 reply = (msg.content or "").strip()
                 break
 
-            # Chạy từng tool call, đút kết quả về role "tool".
+            # Chạy từng tool call, đút kết quả về role "tool" + ghi trace.
             for tc in msg.tool_calls:
                 result = _run_tool(tc.function.name, tc.function.arguments)
                 messages.append(
@@ -1417,6 +1422,12 @@ async def chat(request: Request):
                         "content": result,
                     }
                 )
+                trace.append({
+                    "kind": "tool",
+                    "name": tc.function.name,
+                    "args": tc.function.arguments or "",
+                    "result": (result or "")[:800],
+                })
         else:
             # Vượt quá số vòng cho phép — lấy nội dung assistant cuối nếu có.
             last = next(
@@ -1458,6 +1469,8 @@ async def chat(request: Request):
         out = {"reply": reply}
         if schedule_payload:
             out["schedule"] = schedule_payload
+        if trace:
+            out["trace"] = trace
         return JSONResponse(out)
 
     except Exception as e:

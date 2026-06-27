@@ -1,4 +1,4 @@
-const CACHE = 'assistant-v3';
+const CACHE = 'assistant-v4';
 const ASSETS = ['/', '/index.html', '/manifest.json'];
 
 self.addEventListener('install', e => {
