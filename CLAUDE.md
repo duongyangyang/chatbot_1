@@ -138,3 +138,15 @@ VAPID keys are a P-256 EC pair: private key as PKCS8 PEM, public key as the unco
 - No auth — anyone who can reach the server can drive it and register push subscriptions. Treat as a personal/local app.
 - `httpx` is pinned `<0.28` for compatibility with the pinned `openai==1.14.3`. `python-dotenv` and `py_vapid` (transitive via `pywebpush`) round out the deps.
 - Default model string in `/chat` is `krr/claude-haiku-4-5-20251001` (a provider-specific ID), only used when the client omits `model`.
+
+## Recent changes (2026-06-27)
+
+- **Rebranding**: Đổi tên từ "Trợ lý AI" → "Thư ký Kim" ở header, title, manifest, meta tags.
+- **Avatar & Icon**: Dùng `img/icon.jpg` cho avatar header, avatar tin nhắn AI, và icon PWA (192x512). Tất cả file ảnh lưu `/static/`.
+- **Keep-alive**: Thêm endpoint `GET /ping` + client-side `setInterval(/ping, 300000)` để server không tắt sau thời gian idle.
+- **Markdown table rendering**: Parse bảng markdown (`| ... |`) thành HTML `<table>` với CSS responsive. Font-size tự adjust dựa trên số cột:
+  - 1–3 cột: 13px
+  - 4–5 cột: 8px
+  - ≥6 cột: 6px
+- **Message order**: Đổi thứ tự hiển thị câu trả lời AI: **Reasoning block** (REASONING & TOOLS DETAILED) → **Text** (câu trả lời) → **Schedule card** (nếu có).
+

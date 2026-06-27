@@ -535,7 +535,7 @@
       <div class="header-status"><span class="status-dot"></span>Đang hoạt động</div>
     </div>
     <button id="settings-btn" onclick="openSettings()" title="Cài đặt">⚙️</button>
-    <button id="notif-btn" onclick="toggleNotification()">🔔 Thông báo</button>
+    <button id="notif-btn" onclick="toggleNotification()">🔔</button>
   </header>
 
   <div id="messages">
@@ -935,8 +935,8 @@ async function toggleNotification() {
 
 function setNotifBtn(on) {
   const btn = document.getElementById('notif-btn');
-  if (on) { btn.className = 'enabled'; btn.textContent = '🔔 Đã bật'; }
-  else    { btn.className = '';          btn.textContent = '🔔 Thông báo'; }
+  if (on) { btn.className = 'enabled'; btn.textContent = '🔔 ON'; }
+  else    { btn.className = '';          btn.textContent = '🔔 OFF'; }
 }
 
 async function subscribeToNotifications() {

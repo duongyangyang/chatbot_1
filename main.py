@@ -1616,7 +1616,7 @@ async def test_push_delayed(request: Request):
     if not push_subscriptions:
         return JSONResponse({"error": "Chưa có thiết bị nào đăng ký. Hãy bấm 🔔 Thông báo trên app trước."}, status_code=400)
 
-    run_at = datetime.now() + timedelta(seconds=delay)
+    run_at = datetime.now(TZ) + timedelta(seconds=delay)
     scheduler.add_job(
         lambda: send_push("🧪 Kiểm tra", f"Thông báo thử (sau {delay}s)"),
         'date', run_date=run_at,
@@ -1655,7 +1655,7 @@ scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
 
 def _fire_reminder(reminder_id: int, message: str):
     """Callback APScheduler: gửi push rồi đánh dấu fired trong DB."""
-    send_push("⏰ Nhắc nhở", message)
+    send_push("Nhắc nhở", message)
     try:
         reminder_mark_fired(reminder_id)
     except Exception as e:
