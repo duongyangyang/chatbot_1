@@ -4,3 +4,4 @@ openai==1.14.3
 apscheduler==3.11.2
 pywebpush==2.3.0
 httpx<0.28
+python-dotenv==1.2.1

@@ -1,4 +1,4 @@
-#!/Users/yangd/Downloads/chatbot/.venv/bin/python3
+#!/Users/yangd/Downloads/chatbot/.venv/bin/python
 # -*- coding: utf-8 -*-
 import re
 import sys

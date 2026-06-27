@@ -392,6 +392,26 @@
     cursor: pointer;
   }
 
+  .setting-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 0;
+  }
+  #settings-test-push {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    padding: 11px;
+    cursor: pointer;
+    transition: border-color .2s, color .2s;
+  }
+  #settings-test-push:hover { border-color: var(--accent); color: var(--accent); }
+  #settings-test-push:disabled { opacity: .5; cursor: not-allowed; }
+  #test-push-hint { font-size: 11px; color: var(--muted); line-height: 1.5; display: block; margin-top: 2px; }
+
   /* Settings icon button in header */
   #settings-btn {
     background: none;
@@ -593,39 +613,76 @@ function sendSuggestion(text) {
 }
 
 // Push Notification
+async function getVapidPublicKey() {
+  if (window.VAPID_PUBLIC_KEY) return window.VAPID_PUBLIC_KEY;
+  try {
+    const res = await fetch('/vapid-public-key');
+    const data = await res.json();
+    window.VAPID_PUBLIC_KEY = data.publicKey || '';
+  } catch (e) {
+    console.log('Fetch VAPID public key error:', e);
+    window.VAPID_PUBLIC_KEY = '';
+  }
+  return window.VAPID_PUBLIC_KEY;
+}
+
+// iOS: Web Push chỉ khả dụng khi app được "Add to Home Screen" (chế độ standalone)
+function isStandalone() {
+  return window.matchMedia('(display-mode: standalone)').matches
+      || window.navigator.standalone === true;
+}
+
 async function toggleNotification() {
   const btn = document.getElementById('notif-btn');
 
-  if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+  if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
     showToast('Trình duyệt không hỗ trợ thông báo');
     return;
   }
 
-  if (Notification.permission === 'granted') {
-    showToast('Thông báo đã được bật ✓');
-    btn.className = 'enabled';
-    btn.textContent = '🔔 Đã bật';
+  // iOS (Safari) chỉ cho push khi đã cài app ra màn hình
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || /Mac/.test(navigator.platform);
+  if (isIOS && !isStandalone()) {
+    showToast('Cài app ra màn hình: Share → Add to Home Screen');
     return;
   }
 
+  // Đã được cấp quyền → đảm bảo đã subscribe (trường hợp cấp trước đó nhưng chưa đăng ký)
+  if (Notification.permission === 'granted') {
+    btn.className = 'enabled';
+    btn.textContent = '🔔 Đã bật';
+    await subscribeToNotifications();
+    return;
+  }
+
+  // iOS bắt buộc requestPermission gọi trực tiếp từ cử chỉ người dùng (click)
   const permission = await Notification.requestPermission();
   if (permission === 'granted') {
     btn.className = 'enabled';
     btn.textContent = '🔔 Đã bật';
-    showToast('Đã bật thông báo!');
-    subscribeToNotifications();
+    showToast('Đã bật thông báo ✓');
+    await subscribeToNotifications();
   } else {
     showToast('Bạn đã tắt thông báo trong trình duyệt');
   }
 }
 
 async function subscribeToNotifications() {
+  const key = await getVapidPublicKey();
+  if (!key) {
+    showToast('Server chưa cấu hình VAPID key');
+    return;
+  }
   try {
     swRegistration = await navigator.serviceWorker.ready;
-    const subscription = await swRegistration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(window.VAPID_PUBLIC_KEY || '')
-    });
+    // Đã có subscription cũ → dùng lại thay vì tạo mới
+    let subscription = await swRegistration.pushManager.getSubscription();
+    if (!subscription) {
+      subscription = await swRegistration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(key)
+      });
+    }
     await fetch('/subscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -633,6 +690,7 @@ async function subscribeToNotifications() {
     });
   } catch (e) {
     console.log('Push subscription error:', e);
+    showToast('Không thể đăng ký thông báo');
   }
 }
 
@@ -643,13 +701,15 @@ function urlBase64ToUint8Array(base64String) {
   return new Uint8Array([...rawData].map(c => c.charCodeAt(0)));
 }
 
-// Register service worker
+// Register service worker + đảm bảo subscribe lại nếu đã được cấp quyền từ trước
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').then(reg => {
+  navigator.serviceWorker.register('/sw.js').then(async reg => {
     swRegistration = reg;
-    if (Notification.permission === 'granted') {
+    if (Notification.permission === 'granted' && isStandalone()) {
       document.getElementById('notif-btn').className = 'enabled';
       document.getElementById('notif-btn').textContent = '🔔 Đã bật';
+      // Khôi phục subscription sau khi SW sẵn sàng
+      await subscribeToNotifications();
     }
   });
 }
@@ -707,6 +767,44 @@ function checkConfigOnStart() {
 }
 checkConfigOnStart();
 
+// Test thông báo: lên lịch server gửi push sau 30s
+async function testPush() {
+  const btn = document.getElementById('settings-test-push');
+  btn.disabled = true;
+  const original = btn.textContent;
+  try {
+    const res = await fetch('/test-push-delayed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ delay: 30 })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast('Sẽ gửi thông báo sau 30s ✓');
+      // Đếm ngược để user biết khi nào push tới
+      let left = 30;
+      btn.textContent = '⏳ Gửi sau ' + left + 's...';
+      const timer = setInterval(() => {
+        left--;
+        if (left <= 0) {
+          clearInterval(timer);
+          btn.disabled = false;
+          btn.textContent = original;
+        } else {
+          btn.textContent = '⏳ Gửi sau ' + left + 's...';
+        }
+      }, 1000);
+    } else {
+      showToast(data.error || 'Không lên lịch được');
+      btn.disabled = false;
+    }
+  } catch (e) {
+    console.log('Test push error:', e);
+    showToast('Không kết nối được server');
+    btn.disabled = false;
+  }
+}
+
 </script>
 
 <div id="settings-overlay" onclick="overlayClick(event)">
@@ -726,6 +824,13 @@ checkConfigOnStart();
     </div>
     <button id="settings-save" onclick="saveSettings()">Lưu</button>
     <button id="settings-cancel" onclick="closeSettings()">Huỷ</button>
+
+    <div class="setting-divider"></div>
+    <div class="setting-group">
+      <label>THÔNG BÁO</label>
+      <button id="settings-test-push" onclick="testPush()">🧪 Test thông báo (sau 30s)</button>
+      <small id="test-push-hint">Bật 🔔 Thông báo trước, rồi bấm để nhận push thử sau 30 giây.</small>
+    </div>
   </div>
 </div>
 

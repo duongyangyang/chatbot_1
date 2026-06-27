@@ -2,9 +2,10 @@
 Backend chính: FastAPI + OpenAI-compatible AI + Push Notification + Reminder
 """
 import os, json, asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -12,6 +13,9 @@ from openai import OpenAI
 import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from pywebpush import webpush, WebPushException
+
+# Tải biến môi trường từ .env (nếu có) trước khi đọc cấu hình
+load_dotenv()
 
 app = FastAPI()
 
@@ -52,6 +56,16 @@ async def sw():
 @app.get("/manifest.json")
 async def manifest():
     return FileResponse("manifest.json")
+
+# ── Route: VAPID public key (cho client dùng khi subscribe push) ──────────
+@app.get("/vapid-public-key")
+async def vapid_public_key():
+    if not VAPID_PUBLIC:
+        return JSONResponse(
+            {"error": "VAPID_PUBLIC_KEY chưa được cấu hình trên server."},
+            status_code=500,
+        )
+    return JSONResponse({"publicKey": VAPID_PUBLIC})
 
 # ── Route: Chat ───────────────────────────────────────────────────────────
 @app.post("/chat")
@@ -147,6 +161,41 @@ def send_push(title: str, body: str):
 
     for d in dead:
         push_subscriptions.remove(d)
+
+
+# ── Route: Test push (gửi 1 thông báo thử để kiểm tra) ─────────────────────
+@app.get("/test-push")
+async def test_push():
+    if not VAPID_PRIVATE:
+        return JSONResponse({"error": "Server chưa cấu hình VAPID_PRIVATE_KEY"}, status_code=500)
+    if not push_subscriptions:
+        return JSONResponse({"error": "Chưa có thiết bị nào đăng ký nhận thông báo. Hãy mở app, bật thông báo trước."}, status_code=400)
+    send_push("🧪 Kiểm tra", "Thông báo thử từ server")
+    return JSONResponse({"status": "sent", "subscribers": len(push_subscriptions)})
+
+# ── Route: Test push có trì hoãn (lên lịch gửi sau N giây) ─────────────────
+@app.post("/test-push-delayed")
+async def test_push_delayed(request: Request):
+    data = await request.json() if request.headers.get("content-type") == "application/json" else {}
+    delay = data.get("delay", 30)
+    try:
+        delay = int(delay)
+        if delay < 1 or delay > 3600:
+            delay = 30
+    except (TypeError, ValueError):
+        delay = 30
+
+    if not VAPID_PRIVATE:
+        return JSONResponse({"error": "Server chưa cấu hình VAPID_PRIVATE_KEY"}, status_code=500)
+    if not push_subscriptions:
+        return JSONResponse({"error": "Chưa có thiết bị nào đăng ký. Hãy bấm 🔔 Thông báo trên app trước."}, status_code=400)
+
+    run_at = datetime.now() + timedelta(seconds=delay)
+    scheduler.add_job(
+        lambda: send_push("🧪 Kiểm tra", f"Thông báo thử (sau {delay}s)"),
+        'date', run_date=run_at,
+    )
+    return JSONResponse({"status": "scheduled", "in_seconds": delay})
 
 
 # ── Reminder scheduler ────────────────────────────────────────────────────
