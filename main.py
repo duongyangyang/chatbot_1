@@ -73,7 +73,7 @@ _DEFAULT_PROFILE = {
     "nghe":     "Sinh viên đẹp trai",
     "so_thich": "đánh cầu, chụp ảnh",
     "khu_vuc":  "đang ở Thượng Hải, quê nhà Hà Nội",
-    "ghi_chu":  "Nói chuyện cute đáng yêu. Sử dụng tối đa 2 icons trong phản hồi.",
+    "ghi_chu":  "Chú ý: Không dùng icon, nói chuyện cute đáng yêu.",
 }
 
 
