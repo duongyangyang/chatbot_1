@@ -1258,6 +1258,11 @@ async def sw():
 async def manifest():
     return FileResponse("manifest.json")
 
+# ── Route: Keep-alive ping ─────────────────────────────────────────────────
+@app.get("/ping")
+async def ping():
+    return {"status": "ok"}
+
 # ── Route: VAPID public key (cho client dùng khi subscribe push) ──────────
 @app.get("/vapid-public-key")
 async def vapid_public_key():

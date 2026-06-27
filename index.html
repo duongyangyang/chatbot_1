@@ -1078,6 +1078,11 @@ async function dismissPending(id) {
   } catch (e) { console.log('dismiss error:', e); }
 }
 
+// Keep-alive: ping server mỗi 5 phút để không bị tắt
+setInterval(() => {
+  fetch('/ping').catch(() => {})
+}, 300000)
+
 </script>
 
 <div id="settings-overlay" onclick="overlayClick(event)">
