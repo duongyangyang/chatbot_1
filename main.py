@@ -164,13 +164,22 @@ async def chat(request: Request):
 
         # Parse reminder nếu có
         reminder = extract_reminder(reply_raw)
+        reminder_status = None
         if reminder:
             reminders.append(reminder)
-            schedule_reminder(reminder)
+            reminder_status = schedule_reminder(reminder)
 
         # Làm sạch reply (bỏ thẻ <reminder>)
         import re
         reply = re.sub(r'<reminder>.*?</reminder>', '', reply_raw, flags=re.DOTALL).strip()
+
+        # Báo lại kết quả đặt nhắc để user biết có lên lịch hay không
+        if reminder:
+            if reminder_status and reminder_status.get("ok"):
+                reply += f"\n\n✅ Đã đặt nhắc lúc {reminder_status['run_at']}: {reminder_status['message']}"
+            else:
+                err = reminder_status.get("error", "?") if reminder_status else "?"
+                reply += f"\n\n⚠️ Đặt nhắc không thành công ({err}). Hãy ghi rõ giờ HH:MM và ngày YYYY-MM-DD."
 
         chat_history.append({"role": "assistant", "content": reply})
         return JSONResponse({"reply": reply})
@@ -276,20 +285,47 @@ async def test_push_delayed(request: Request):
 
 
 # ── Reminder scheduler ────────────────────────────────────────────────────
-scheduler = AsyncIOScheduler(timezone="Asia/Ho_Chi_Minh")
+from zoneinfo import ZoneInfo
+TZ = ZoneInfo("Asia/Shanghai")  # múi giờ Trung Quốc (UTC+8)
+scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
 
-def schedule_reminder(reminder: dict):
-    """Lên lịch nhắc nhở từ dict {time, date, message}."""
+def schedule_reminder(reminder: dict) -> dict:
+    """Lên lịch nhắc nhở. Trả về {ok, run_at, message, error} để báo lại user."""
+    msg = str(reminder.get('message', '')).strip()
     try:
-        dt_str = f"{reminder.get('date', datetime.now().strftime('%Y-%m-%d'))} {reminder['time']}"
-        dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
-        if dt > datetime.now():
-            scheduler.add_job(
-                lambda msg=reminder['message']: send_push("⏰ Nhắc nhở", msg),
-                'date', run_date=dt
-            )
+        time_str = str(reminder.get('time', '')).strip()
+        # Chấp nhận HH:MM hoặc HH:MM:SS → lấy HH:MM
+        if ':' in time_str:
+            time_str = time_str[:5]
+        date_str = str(reminder.get('date', '')).strip() or datetime.now(TZ).strftime('%Y-%m-%d')
+        dt_str = f"{date_str} {time_str}"
+        dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M").replace(tzinfo=TZ)
+        now = datetime.now(TZ)
+        if dt <= now:
+            print(f"[reminder] bỏ qua (đã qua giờ): {dt_str} | now={now.strftime('%Y-%m-%d %H:%M')}")
+            return {"ok": False, "error": f"giờ đã qua ({dt_str})", "run_at": dt_str, "message": msg}
+        scheduler.add_job(
+            lambda m=msg: send_push("⏰ Nhắc nhở", m),
+            'date', run_date=dt,
+        )
+        print(f"[reminder] ĐÃ LÊN LỊCH: {dt_str} ({dt.isoformat()}) -> {msg}")
+        return {"ok": True, "run_at": dt_str, "message": msg}
     except Exception as e:
-        print(f"Schedule error: {e}")
+        print(f"[reminder] schedule error: {e} | raw={reminder}")
+        return {"ok": False, "error": str(e), "run_at": "", "message": msg}
+
+
+@app.get("/debug-reminders")
+async def debug_reminders():
+    """Liệt kê reminder đã nhận và các job đang chờ — để kiểm tra xem có lên lịch chưa."""
+    return JSONResponse({
+        "now": datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S %Z"),
+        "reminders_received": reminders,
+        "scheduled_jobs": [
+            {"id": j.id, "next_run": str(j.next_run_time)}
+            for j in scheduler.get_jobs()
+        ],
+    })
 
 
 # ── Startup ───────────────────────────────────────────────────────────────
