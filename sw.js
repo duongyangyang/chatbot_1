@@ -1,8 +1,15 @@
-const CACHE = 'assistant-v1';
-const ASSETS = ['/', '/index.html'];
+const CACHE = 'assistant-v2';
+const ASSETS = ['/', '/index.html', '/manifest.json'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
+  // Cài từng asset riêng: một file 404 không làm hỏng toàn bộ install.
+  e.waitUntil(
+    caches.open(CACHE).then(c =>
+      Promise.all(ASSETS.map(u =>
+        fetch(u, { cache: 'no-store' }).then(r => r.ok ? c.put(u, r.clone()) : null).catch(() => null)
+      ))
+    )
+  );
   self.skipWaiting();
 });
 

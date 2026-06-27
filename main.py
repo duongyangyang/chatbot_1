@@ -51,6 +51,11 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 async def index():
     return FileResponse("index.html")
 
+@app.get("/index.html")
+async def index_html():
+    # Service worker precache yêu cầu /index.html phải 200 (nếu 404, addAll fail → SW không cài được)
+    return FileResponse("index.html")
+
 @app.get("/sw.js")
 async def sw():
     return FileResponse("sw.js", media_type="application/javascript")
