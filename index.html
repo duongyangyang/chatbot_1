@@ -367,6 +367,12 @@
 
   /* Trace (thinking + tool calls) */
   .trace { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+  .trace-wrap { margin-top: 8px; background: #141414; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; }
+  .trace-wrap > summary { cursor: pointer; padding: 6px 8px; list-style: none; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .trace-wrap > summary::-webkit-details-marker { display: none; }
+  .trace-wrap > summary::before { content: '▸'; font-size: 10px; }
+  .trace-wrap[open] > summary::before { content: '▾'; }
+  .trace-wrap .trace { margin: 0 8px 8px; }
   .trace-thought { font-size: 12px; color: var(--muted); font-style: italic; background: #141414; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; white-space: pre-wrap; }
   .trace-tool { background: #141414; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; }
   .trace-tool summary { cursor: pointer; padding: 6px 8px; list-style: none; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -740,7 +746,7 @@ function renderMarkdown(src){
 // ── Trace: hiển thị thinking + tool calls (giống Claude/Codex) ───────────
 function renderTrace(trace){
   if(!trace || !trace.length) return '';
-  let html = '<div class="trace">';
+  let html = '<details class="trace-wrap"><summary>💭 Quá trình suy nghĩ &amp; công cụ</summary><div class="trace">';
   for(const s of trace){
     if(s.kind === 'thought' && s.text){
       html += '<div class="trace-thought">💭 ' + _escapeRaw(s.text) + '</div>';
@@ -751,7 +757,7 @@ function renderTrace(trace){
               + '<pre class="trace-result">' + _escapeRaw(s.result || '') + '</pre></details>';
     }
   }
-  html += '</div>';
+  html += '</div></details>';
   return html;
 }
 
