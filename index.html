@@ -369,6 +369,10 @@
   .md-icode { background: #0a0a0a; border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-family: ui-monospace,Menlo,monospace; font-size: 12px; }
   .md-code { background: #0a0a0a; border: 1px solid var(--border); border-radius: 8px; padding: 10px; overflow-x: auto; margin: 6px 0; }
   .md-code code { font-family: ui-monospace,Menlo,monospace; font-size: 12px; white-space: pre; color: #d6e4ff; }
+  .md-table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; overflow-x: auto; }
+  .md-table th, .md-table td { padding: 8px 12px; border: 1px solid var(--border); text-align: left; }
+  .md-table th { background: var(--surface); font-weight: 500; }
+  .md-table tr:hover { background: rgba(79, 142, 247, 0.05); }
   .bubble a { color: var(--accent); }
 
   /* Trace (thinking + tool calls) */
@@ -723,8 +727,50 @@ function _mdInline(t){
   return t;
 }
 
+function parseMarkdownTable(src) {
+  const lines = String(src).split('\n');
+  const tableStart = lines.findIndex(l => l.includes('|'));
+  if (tableStart === -1) return src;
+
+  const tableLines = [];
+  let i = tableStart;
+  while (i < lines.length && lines[i].includes('|')) {
+    tableLines.push(lines[i]);
+    i++;
+  }
+
+  if (tableLines.length < 2) return src;
+
+  const headerCells = tableLines[0].split('|').map(c => c.trim()).filter(c => c);
+  const sepLine = tableLines[1];
+
+  if (!/^[\s|:\-]+$/.test(sepLine)) return src;
+
+  let html = '<table class="md-table"><thead><tr>';
+  for (const h of headerCells) {
+    html += '<th>' + _mdInline(h) + '</th>';
+  }
+  html += '</tr></thead><tbody>';
+
+  for (let j = 2; j < tableLines.length; j++) {
+    const rowCells = tableLines[j].split('|').map(c => c.trim()).filter(c => c);
+    if (rowCells.length === 0) continue;
+    html += '<tr>';
+    for (const cell of rowCells) {
+      html += '<td>' + _mdInline(cell) + '</td>';
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+
+  const beforeTable = lines.slice(0, tableStart).join('\n');
+  const afterTable = lines.slice(i).join('\n');
+  return beforeTable + '\n' + html + '\n' + afterTable;
+}
+
 function renderMarkdown(src){
   if(!src) return '';
+  src = parseMarkdownTable(src);
   // 1) tách code block ra placeholder (xử lý đa dòng nguyên khối)
   const blocks = [];
   let s = String(src).replace(/```(\w*)\n?([\s\S]*?)```/g, (m, lang, code) => {
@@ -737,6 +783,9 @@ function renderMarkdown(src){
   const closeLists = () => { if(inUL){ html += '</ul>'; inUL=false; } if(inOL){ html += '</ol>'; inOL=false; } };
   for(const line of lines){
     if(/^@@BLK\d+@@$/.test(line.trim())){ closeLists(); html += line.trim(); continue; }
+    if(/^<table/.test(line.trim())){ closeLists(); html += line; continue; }
+    if(/^<\/table>/.test(line.trim())){ html += line; continue; }
+    if(/^<thead>|^<tbody>|^<\/thead>|^<\/tbody>|^<tr|^<\/tr|^<th|^<td/.test(line.trim())){ html += line; continue; }
     let m;
     if((m = line.match(/^(#{1,3})\s+(.*)/))){ closeLists(); const lvl=m[1].length; html += '<div class="md-h md-h'+lvl+'">'+_mdInline(m[2])+'</div>'; continue; }
     if((m = line.match(/^\s*[-*]\s+(.*)/))){ if(!inUL){ closeLists(); html+='<ul class="md-ul">'; inUL=true; } html += '<li>'+_mdInline(m[1])+'</li>'; continue; }
