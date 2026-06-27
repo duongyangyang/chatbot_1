@@ -6,8 +6,8 @@
 <meta name="theme-color" content="#0f0f0f">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
-<meta name="apple-mobile-web-app-title" content="Trợ lý AI">
-<title>Trợ lý AI</title>
+<meta name="apple-mobile-web-app-title" content="Thư ký Kim">
+<title>Thư ký Kim</title>
 <link rel="manifest" href="/manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap" rel="stylesheet">
@@ -522,9 +522,9 @@
 <body>
 <div id="app">
   <header>
-    <div class="avatar"><img src="/img/icon.jpg" alt="Trợ lý"></div>
+    <div class="avatar"><img src="static/icon.jpg" alt="Thư ký Kim"></div>
     <div class="header-info">
-      <div class="header-name">Trợ lý AI</div>
+      <div class="header-name">Thư ký Kim</div>
       <div class="header-status"><span class="status-dot"></span>Đang hoạt động</div>
     </div>
     <button id="settings-btn" onclick="openSettings()" title="Cài đặt">⚙️</button>
@@ -534,7 +534,7 @@
   <div id="messages">
     <div id="empty">
       <div class="big">👋</div>
-      <h2>Xin chào! Tôi là trợ lý AI của bạn</h2>
+      <h2>Xin chào! Tôi là Thư ký Kim aka Trợ lý AI của bạn</h2>
       <p id="empty-hint">Hỏi bất cứ điều gì, đặt lịch,<br>nhắc nhở, hoặc chỉ tâm sự thôi cũng được.</p>
       <div class="suggestion-chips">
         <div class="chip" onclick="sendSuggestion('Hôm nay tôi cần làm gì?')">📋 Việc hôm nay</div>
@@ -1042,6 +1042,7 @@ async function loadPending() {
     items.reverse().forEach(it => renderPending(it));
   } catch (e) {
     console.log('loadPending error:', e);
+
   }
 }
 

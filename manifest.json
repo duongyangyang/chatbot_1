@@ -1,14 +1,14 @@
 {
-  "name": "Trợ lý AI",
-  "short_name": "Trợ lý",
-  "description": "Trợ lý AI cá nhân",
+  "name": "Thư ký Kim",
+  "short_name": "Thư ký",
+  "description": "Thư ký Kim aka Trợ lý AI cá nhân xinh đẹp",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f0f0f",
   "theme_color": "#0f0f0f",
   "orientation": "portrait",
   "icons": [
-    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    { "src": "static/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "static/icon-512.png", "sizes": "512x512", "type": "image/png" }
   ]
 }
