@@ -1277,7 +1277,7 @@ async def manifest():
     return FileResponse("manifest.json")
 
 # ── Route: Keep-alive ping ─────────────────────────────────────────────────
-@app.get("/ping")
+@app.head("/ping")
 async def ping():
     return {"status": "ok"}
 
