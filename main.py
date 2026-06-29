@@ -350,10 +350,19 @@ def msg_recent(n: int = 20) -> list[dict]:
 def msg_list(n: int = 100) -> list[dict]:
     with db() as c:
         rows = c.execute(
-            "SELECT role, content, created_at FROM messages ORDER BY id DESC LIMIT ?", (n,)
+            "SELECT role, content, created_at, metadata_json FROM messages ORDER BY id DESC LIMIT ?", (n,)
         ).fetchall()
-        return [{"role": r["role"], "content": r["content"], "created_at": r["created_at"]}
-                for r in reversed(rows)]
+        out = []
+        for r in reversed(rows):
+            d = {"role": r["role"], "content": r["content"], "created_at": r["created_at"], "trace": None}
+            try:
+                if r["metadata_json"]:
+                    md = json.loads(r["metadata_json"])
+                    d["trace"] = md.get("trace")
+            except Exception:
+                d["trace"] = None
+            out.append(d)
+        return out
 
 def msg_clear():
     with db() as c:
@@ -364,6 +373,10 @@ def msg_clear():
 # ── Tasks CRUD ───────────────────────────────────────────────────────────
 def task_create(title: str, notes: str = "", due_at: str = "", remind_at: str = "",
                 start_at: str = "", priority: int = 3, repeat_rule: str = "") -> dict:
+    try:
+        priority = max(1, min(4, int(priority)))
+    except (TypeError, ValueError):
+        priority = 3
     with db() as c:
         cur = c.execute(
             """INSERT INTO tasks(title, notes, status, priority, start_at, due_at, remind_at, repeat_rule)
@@ -452,6 +465,30 @@ def memory_list(limit: int = 50) -> list[dict]:
             "SELECT * FROM memories ORDER BY importance DESC, created_at DESC LIMIT ?", (limit,)
         ).fetchall()
         return [dict(r) for r in rows]
+
+def memory_update(memory_id: int, **fields) -> dict:
+    allowed = {"content", "type", "importance"}
+    sets, vals = [], []
+    for k, v in fields.items():
+        if k in allowed and v is not None:
+            sets.append(f"{k}=?"); vals.append(v)
+    if not sets:
+        return {"ok": False, "error": "không có trường hợp lệ"}
+    vals.append(memory_id)
+    with db() as c:
+        cur = c.execute(f"UPDATE memories SET {', '.join(sets)} WHERE id=?", vals)
+        if cur.rowcount == 0:
+            return {"ok": False, "error": f"không có memory id {memory_id}"}
+        _mark_backup_dirty()
+        return {"ok": True, "id": memory_id}
+
+def memory_delete(memory_id: int) -> dict:
+    with db() as c:
+        cur = c.execute("DELETE FROM memories WHERE id=?", (memory_id,))
+        if cur.rowcount == 0:
+            return {"ok": False, "error": f"không có memory id {memory_id}"}
+        _mark_backup_dirty()
+        return {"ok": True, "id": memory_id}
 
 
 # ── Jobs CRUD (proactive: morning_planning, daily_review…) ───────────────
@@ -622,15 +659,21 @@ Ngôn ngữ: tiếng Việt, tự nhiên.
 - Múi giờ: Asia/Shanghai (UTC+8)
 - Mùa: {season} (Bắc bán cầu)
 
-# Task & Reminder (gộp lại)
-- Khi tôi nói tạo việc/nhắc nhở: dùng create_task với remind_at (YYYY-MM-DD HH:MM).
-- Reminder là thuộc tính của task — KHÔNG cần tạo reminder riêng.
-- Khi tôi hoàn thành việc: dùng complete_task.
+# Task & Reminder (tuân thủ nghiêm)
+- CHỈ tạo task khi: (a) user yêu cầu rõ "tạo/thêm/nhắc/lên lịch/ghi việc", hoặc (b) cùng lúc chốt kế hoạch có thời gian cụ thể.
+- KHÔNG tạo task khi: user chỉ chia sẻ, tâm sự, hỏi ý kiến, kể chuyện, nhắc việc chung chung không thời gian.
+- KHÔNG tách 1 câu của user thành nhiều task. 1 ý = 1 task.
+- title: ngắn, bắt đầu bằng động từ, cụ thể (VD "Gửi báo cáo tuần", "Mua sữa"). Tránh title mơ hồ như "Việc của Dương".
+- priority: 1=khẩn/hậu quả lớn, 2=quan trọng, 3=bình thường, 4=khi rảnh. Không rõ → 3.
+- remind_at/due_at/start_at: CHỈ đặt khi user nói thời gian. Không tự bịa thời gian.
+- Khi chưa rõ (title, thời gian, mức ưu tiên) → HỎI lại user 1 câu, KHÔNG tự tạo.
+- Nếu nghĩ đã có task cùng nội dung → gọi list_tasks kiểm tra, rồi dùng update_task để sửa, KHÔNG tạo mới.
+- Reminder là thuộc tính remind_at của task — KHÔNG tạo reminder riêng.
+- Khi user hoàn thành việc → complete_task. Khi user muốn xoá → delete_task. Khi muốn sửa/chuyển ngày → update_task.
 
-# Morning Planning / Daily Review
-- Khi tôi yêu cầu lên lịch ngày: tạo 1 job type='morning_planning' với payload chứa slots.
-- Khi tôi yêu cầu tổng kết: tạo job type='daily_review'/'weekly_review'/'monthly_review'.
-- Sau khi tạo job, trình bày nội dung ngay trong tin nhắn (không cần duyệt riêng như cũ).
+# Lên lịch / Tổng kết
+- Khi user yêu cầu lên lịch ngày: đề xuất lịch cân bằng (gồm work chính, ≥1 vận động, ≥1 học tập, có nghỉ) bằng markdown theo khung giờ. Dựa list_tasks (tránh trùng) + list_goals + get_life_state. KHÔNG tự tạo task/remind — chỉ tạo khi user xác nhận rõ sau khi xem lịch.
+- Khi user yêu cầu tổng kết cuối ngày: gợi ý user xem lại tasks (list_tasks) và chia sẻ việc đã làm; tóm tắt ngắn. Tổng kết tự động (cron) do hệ thống chạy riêng.
 
 # Memory
 - Khi tôi chia sẻ thông tin quan trọng: gọi save_memory(content, type, importance).
@@ -666,16 +709,17 @@ TOOL_SPECS = [
     }},
     {"type": "function", "function": {
         "name": "create_task",
-        "description": "Tạo task mới. Reminder là thuộc tính remind_at của task (KHÔNG cần tạo reminder riêng).",
+        "description": "Tạo MỘT task khi user yêu cầu rõ (tạo/nhắc/lên lịch/ghi việc) hoặc khi chốt kế hoạch có thời gian cụ thể. KHÔNG tạo task khi user chỉ chia sẻ, tâm sự, hỏi ý kiến. KHÔNG tách 1 câu thành nhiều task (1 ý = 1 task). Reminder là thuộc tính remind_at của task (KHÔNG cần tạo reminder riêng).",
         "parameters": {"type": "object",
             "properties": {
-                "title": {"type": "string"},
-                "notes": {"type": "string"},
-                "due_at": {"type": "string", "description": "Hạn chót YYYY-MM-DD HH:MM"},
-                "remind_at": {"type": "string", "description": "Thời gian nhắc YYYY-MM-DD HH:MM"},
-                "start_at": {"type": "string", "description": "Thời gian bắt đầu YYYY-MM-DD HH:MM"},
-                "priority": {"type": "integer", "description": "1=cao, 2=trên trung bình, 3=bình thường, 4=thấp"},
-                "repeat_rule": {"type": "string", "description": "Quy tắc lặp: daily|weekly|monthly hoặc cron"},
+                "title": {"type": "string", "description": "Ngắn, bắt đầu bằng động từ, cụ thể. ĐÚNG: 'Gửi báo cáo tuần', 'Mua sữa'. SAI: 'Việc của Dương', 'Xử lý việc'."},
+                "notes": {"type": "string", "description": "Context/lý do tại sao cần làm (1 câu ngắn)."},
+                "due_at": {"type": "string", "description": "Hạn chót 'YYYY-MM-DD HH:MM'. Chỉ đặt khi user nói thời gian. Có thể nhập tương đối: 'hôm nay 18:00', 'mai 9:00'."},
+                "remind_at": {"type": "string", "description": "Thời gian nhắc 'YYYY-MM-DD HH:MM'. Chỉ đặt khi user muốn được nhắc trước."},
+                "start_at": {"type": "string", "description": "Thời gian bắt đầu 'YYYY-MM-DD HH:MM'."},
+                "priority": {"type": "integer", "enum": [1, 2, 3, 4],
+                             "description": "1=khẩn/có hậu quả lớn, 2=quan trọng cần làm sớm, 3=bình thường (mặc định), 4=khi rảnh. Không rõ → 3."},
+                "repeat_rule": {"type": "string", "description": "Quy tắc lặp: daily|weekly|monthly."},
             },
             "required": ["title"],
         },
@@ -694,16 +738,16 @@ TOOL_SPECS = [
     }},
     {"type": "function", "function": {
         "name": "update_task",
-        "description": "Cập nhật task (title, notes, due_at, remind_at, priority, status, repeat_rule).",
+        "description": "Sửa task đã có (đổi title, notes, due_at, remind_at, priority, status, repeat_rule). Dùng khi user muốn sửa/chuyển ngày/đánh dấu xong task CŨ — KHÔNG tạo task mới khi trùng. Để đánh dấu xong cũng có thể dùng complete_task.",
         "parameters": {"type": "object",
             "properties": {
                 "id": {"type": "integer"},
                 "title": {"type": "string"},
                 "notes": {"type": "string"},
-                "due_at": {"type": "string"},
-                "remind_at": {"type": "string"},
+                "due_at": {"type": "string", "description": "Hạn chót 'YYYY-MM-DD HH:MM'. Gửi chuỗi rỗng để xoá hạn."},
+                "remind_at": {"type": "string", "description": "Nhắc 'YYYY-MM-DD HH:MM'. Gửi chuỗi rỗng để xoá nhắc."},
                 "start_at": {"type": "string"},
-                "priority": {"type": "integer"},
+                "priority": {"type": "integer", "enum": [1, 2, 3, 4]},
                 "status": {"type": "string", "enum": ["pending", "done"]},
                 "repeat_rule": {"type": "string"},
             },
@@ -712,7 +756,7 @@ TOOL_SPECS = [
     }},
     {"type": "function", "function": {
         "name": "delete_task",
-        "description": "Xóa vĩnh viễn task.",
+        "description": "Xoá vĩnh viễn task (khi user yêu cầu xoá rõ). KHÔNG dùng để 'đánh dấu xong' — dùng complete_task cho việc đó.",
         "parameters": {"type": "object", "properties": {"id": {"type": "integer"}}, "required": ["id"]},
     }},
     {"type": "function", "function": {
@@ -798,6 +842,7 @@ TOOL_SPECS = [
 ]
 
 MAX_TOOL_ROUNDS = 8
+MAX_CREATE_TASKS_PER_TURN = 3
 
 
 # ── Tool implementations ──────────────────────────────────────────────────
@@ -812,6 +857,14 @@ def _tool_get_current_time(timezone: str = "Asia/Shanghai") -> str:
 
 def _tool_create_task(title, notes="", due_at="", remind_at="", start_at="",
                       priority=3, repeat_rule="") -> str:
+    # Dedup mềm: nếu đã có task mở cùng tên → gợi ý update thay vì tạo mới.
+    with db() as c:
+        dup = c.execute(
+            "SELECT id FROM tasks WHERE status='pending' AND title=? ORDER BY id DESC LIMIT 1",
+            (title,)).fetchone()
+    if dup:
+        return (f"Đã có task mở cùng tên #{dup['id']}: {title}. "
+                f"Nếu muốn đổi ngày/ưu tiên hãy dùng update_task(id={dup['id']}, ...) thay vì tạo mới.")
     t = task_create(title, notes=notes, due_at=due_at, remind_at=remind_at,
                     start_at=start_at, priority=priority, repeat_rule=repeat_rule)
     result = f"Đã tạo task id={t['id']}: {title}"
@@ -903,6 +956,40 @@ def _tool_get_life_state() -> str:
 def _tool_update_profile(**kwargs) -> str:
     r = profile_update(**kwargs)
     return f"OK: đã cập nhật profile" if r.get("ok") else f"Lỗi: {r.get('error')}"
+
+def task_list_today() -> dict:
+    """Trả {pending_today, done_today, date} theo ngày local Asia/Shanghai.
+    Lưu ý lệch tz: created_at lưu UTC (CURRENT_TIMESTAMP), completed_at lưu local ISO (_now_iso),
+    due_at/remind_at/start_at là text local do user/LLM nhập."""
+    today = datetime.now(TZ).strftime("%Y-%m-%d")
+    yesterday = (datetime.now(TZ) - timedelta(days=1)).strftime("%Y-%m-%d")
+    with db() as c:
+        pend = c.execute(
+            "SELECT * FROM tasks WHERE status='pending' AND ("
+            "substr(due_at,1,10)=? OR substr(remind_at,1,10)=? OR substr(start_at,1,10)=? "
+            "OR substr(created_at,1,10)=? OR substr(created_at,1,10)=?)",
+            (today, today, today, today, yesterday)).fetchall()
+        done = c.execute(
+            "SELECT * FROM tasks WHERE status='done' AND substr(completed_at,1,10)=?", (today,)).fetchall()
+
+    def is_today_local(row):
+        for col in ("due_at", "remind_at", "start_at"):
+            v = row.get(col)
+            if v and str(v)[:10] == today:
+                return True
+        # created_at: UTC → local
+        try:
+            ca = str(row.get("created_at") or "").replace(" ", "T")
+            local = datetime.fromisoformat(ca).replace(tzinfo=ZoneInfo("UTC")).astimezone(TZ)
+            if local.strftime("%Y-%m-%d") == today:
+                return True
+        except Exception:
+            pass
+        return False
+
+    pending_today = [dict(r) for r in pend if is_today_local(dict(r))]
+    done_today = [dict(r) for r in done]
+    return {"pending_today": pending_today, "done_today": done_today, "date": today}
 
 def _build_context_bundle() -> str:
     now_str = datetime.now(TZ).strftime("%Y-%m-%d")
@@ -1119,9 +1206,13 @@ def _server_client():
 
 _JOB_DIRECTIVES = {
     "morning_planning": (
-        "Dựa vào context, lên lịch ngày mai với các slot hợp lý (sáng làm việc chính, có nghỉ, tập thể dục). "
-        "Tạo tasks cho từng slot quan trọng bằng create_task với start_at/remind_at phù hợp. "
-        "Viết tóm tắt ngắn về kế hoạch ngày."
+        "Lên lịch cho NGÀY MAI. KHÔNG gọi create_task/update_task/complete_task/delete_task. "
+        "Chỉ đề xuất lịch bằng JSON. Yêu cầu cân bằng: ít nhất 1 slot vận động (exercise), "
+        "1 slot học tập (learning), các slot work chính, và slot nghỉ (rest). "
+        "Dựa vào tasks đang mở (không trùng), mục tiêu gần (tuần/tháng) và mục tiêu xa (năm). "
+        "Trả về ĐÚNG MỘT khối ```json [{\"time\":\"HH:MM\",\"title\":\"...\","
+        "\"category\":\"work|exercise|learning|rest|other\",\"priority\":1-4,\"remind\":true|false}]``` "
+        "không kèm giải thích ngoài khối JSON. time là giờ bắt đầu trong ngày mai."
     ),
     "daily_review": (
         "Tổng kết cuối ngày: hoàn thành gì, trì hoãn gì, tâm trạng. "
@@ -1137,6 +1228,164 @@ _JOB_DIRECTIVES = {
     ),
 }
 
+PLANNING_TOOLS = [t for t in TOOL_SPECS if t["function"]["name"]
+                  in ("list_tasks", "list_goals", "get_life_state", "get_context", "search_memory", "get_current_time")]
+
+def _build_planning_bundle() -> str:
+    today = datetime.now(TZ)
+    tomorrow = (today + timedelta(days=1)).strftime("%Y-%m-%d")
+    tasks = task_list("pending")
+    state = life_state_get()
+    goals_all = goal_list()
+    near = [g for g in goals_all if g["level"] in ("week", "month")]
+    far = [g for g in goals_all if g["level"] == "year"]
+    return (
+        f"## Ngày lên lịch: {tomorrow}\n"
+        f"## Life OS: phase={state.get('current_life_phase','')} | priorities={state.get('top_3_priorities','')}\n"
+        f"## Tasks đang mở ({len(tasks)}) — tránh trùng:\n" +
+        ("\n".join(f"- {r['title']} (hạn {r['due_at'] or '—'})" for r in tasks) or "(không có)") + "\n"
+        f"## Mục tiêu gần (tuần/tháng):\n" +
+        ("\n".join(f"- [{g['level']}][{g['period']}] {g['title']}" for g in near) or "(không có)") + "\n"
+        f"## Mục tiêu xa (năm):\n" +
+        ("\n".join(f"- {g['title']}" for g in far) or "(không có)")
+    )
+
+def _parse_slots_json(reply: str) -> list:
+    """Tìm khối ```json [...] ``` hoặc mảng [...] đầu tiên trong reply. Trả list slot đã validate."""
+    import re as _re
+    if not reply:
+        return []
+    candidates = []
+    m = _re.search(r"```(?:json)?\s*(\[[\s\S]*?\])\s*```", reply, _re.I)
+    if m:
+        candidates.append(m.group(1))
+    m2 = _re.search(r"(\[[\s\S]*?\])", reply)
+    if m2:
+        candidates.append(m2.group(1))
+    for cand in candidates:
+        try:
+            arr = json.loads(cand)
+            if isinstance(arr, list):
+                slots = []
+                for s in arr:
+                    if not isinstance(s, dict):
+                        continue
+                    title = str(s.get("title", "")).strip()
+                    time_str = str(s.get("time", "")).strip()
+                    if not title or not time_str:
+                        continue
+                    # validate HH:MM
+                    try:
+                        h, mn = map(int, time_str.split(":")[:2])
+                        if not (0 <= h <= 23 and 0 <= mn <= 59):
+                            continue
+                    except Exception:
+                        continue
+                    cat = str(s.get("category", "other")).lower()
+                    if cat not in ("work", "exercise", "learning", "rest", "other"):
+                        cat = "other"
+                    try:
+                        prio = max(1, min(4, int(s.get("priority", 3))))
+                    except Exception:
+                        prio = 3
+                    slots.append({"time": f"{h:02d}:{mn:02d}", "title": title, "category": cat,
+                                  "priority": prio, "remind": bool(s.get("remind", True))})
+                if slots:
+                    return slots
+        except Exception:
+            continue
+    return []
+
+def task_exists_today(title: str, date: str) -> bool:
+    with db() as c:
+        r = c.execute(
+            "SELECT 1 FROM tasks WHERE title=? AND status='pending' AND ("
+            "substr(start_at,1,10)=? OR substr(due_at,1,10)=?) LIMIT 1",
+            (title, date, date)).fetchone()
+    return bool(r)
+
+def task_create_from_slot(slot: dict, date: str) -> dict:
+    title = str(slot.get("title", "")).strip()
+    if not title:
+        return {"ok": False, "skipped": "no title"}
+    if task_exists_today(title, date):
+        return {"ok": False, "skipped": "dup", "title": title}
+    time_str = str(slot.get("time", "09:00"))
+    try:
+        h, m = map(int, time_str.split(":")[:2])
+    except Exception:
+        return {"ok": False, "skipped": "bad time"}
+    start_at = f"{date} {h:02d}:{m:02d}"
+    remind_at = ""
+    remind_min = h * 60 + m - 15  # nhắc 15 phút trước
+    if 360 <= remind_min <= 1320 and slot.get("remind", True):  # chỉ trong 06:00–22:00
+        rh, rm = divmod(remind_min, 60)
+        remind_at = f"{date} {rh:02d}:{rm:02d}"
+    try:
+        priority = max(1, min(4, int(slot.get("priority", 3))))
+    except Exception:
+        priority = 3
+    notes = f"category: {slot.get('category', 'other')}"
+    t = task_create(title, notes=notes, start_at=start_at, due_at=start_at,
+                    remind_at=remind_at, priority=priority)
+    if remind_at:
+        try:
+            dt = datetime.strptime(remind_at, "%Y-%m-%d %H:%M").replace(tzinfo=TZ)
+            _schedule_task_reminder(t["id"], dt, title)
+        except Exception:
+            pass
+    return {"ok": True, "id": t["id"], "title": title, "remind_at": remind_at}
+
+def _run_morning_planning(client, mdl) -> dict:
+    tomorrow = (datetime.now(TZ) + timedelta(days=1)).strftime("%Y-%m-%d")
+    bundle = _build_planning_bundle()
+    sys_prompt = build_system_prompt() + "\n\n# Yêu cầu lượt này\n" + _JOB_DIRECTIVES["morning_planning"]
+    messages = [
+        {"role": "system", "content": sys_prompt},
+        {"role": "user", "content": f"Context:\n{bundle}\n\nHãy lên lịch ngày mai."},
+    ]
+    reply = ""
+    try:
+        tools_ok = True
+        for _ in range(4):
+            try:
+                resp = client.chat.completions.create(
+                    model=mdl, messages=messages, tools=PLANNING_TOOLS,
+                    tool_choice="auto", max_tokens=1200)
+            except Exception as e:
+                # Proxy có thể strip tools → thử lại không tools.
+                if tools_ok:
+                    tools_ok = False
+                    resp = client.chat.completions.create(model=mdl, messages=messages, max_tokens=1200)
+                else:
+                    raise
+            msg = resp.choices[0].message
+            messages.append(msg.model_dump(exclude_none=True))
+            if not msg.tool_calls:
+                reply = (msg.content or "").strip()
+                break
+            for tc in msg.tool_calls:
+                messages.append({"role": "tool", "tool_call_id": tc.id,
+                                 "content": _run_tool(tc.function.name, tc.function.arguments)})
+        else:
+            last = next((m for m in reversed(messages) if m.get("role") == "assistant" and m.get("content")), None)
+            reply = (last["content"] if last else "").strip()
+
+        reply, _ = _split_thinking(reply)
+        slots = _parse_slots_json(reply)
+        if not slots:
+            jid = job_create("morning_planning", payload={"content": reply, "date": tomorrow, "slots": None})
+            send_push("Lịch ngày mai", "Mở app để xem (không lấy được slots JSON)")
+            print(f"[proactive] morning_planning no-slots job={jid['id']}")
+            return {"job": "morning_planning", "ok": True, "content": reply, "slots": None}
+        jid = job_create("morning_planning", payload={"slots": slots, "date": tomorrow, "content": reply})
+        send_push("Lịch ngày mai sẵn sàng", "Mở app để duyệt")
+        print(f"[proactive] morning_planning slots={len(slots)} job={jid['id']}")
+        return {"job": "morning_planning", "ok": True, "content": reply, "slots": slots, "job_id": jid["id"]}
+    except Exception as e:
+        print(f"[proactive] morning_planning error: {type(e).__name__}: {e}")
+        return {"job": "morning_planning", "ok": False, "error": f"{type(e).__name__}: {e}"}
+
 def _run_proactive_job(job_type: str) -> dict:
     result = {"job": job_type, "ok": False, "content": "", "error": None}
     client, mdl = _server_client()
@@ -1144,6 +1393,8 @@ def _run_proactive_job(job_type: str) -> dict:
         result["error"] = "chưa có API key"
         print(f"[proactive] {job_type} skip: {result['error']}")
         return result
+    if job_type == "morning_planning":
+        return _run_morning_planning(client, mdl)
     bundle = _build_context_bundle()
     sys_prompt = build_system_prompt() + "\n\n# Yêu cầu lượt này\n" + _JOB_DIRECTIVES.get(job_type, "")
     messages = [
@@ -1189,10 +1440,18 @@ def _run_proactive_job(job_type: str) -> dict:
         print(f"[proactive] {job_type} error: {result['error']}")
     return result
 
+def _run_daily_review_interactive() -> dict:
+    """Daily review hardcode: tạo job pending (interactive) + push nudge. KHÔNG dùng LLM."""
+    today = datetime.now(TZ).strftime("%Y-%m-%d")
+    jid = job_create("daily_review", payload={"interactive": True, "date": today, "content": ""})
+    send_push("Tổng kết ngày", "Mở app để tổng kết hôm nay")
+    print(f"[proactive] daily_review interactive job={jid['id']}")
+    return {"ok": True, "job_id": jid["id"], "interactive": True}
+
 def _register_cron_jobs():
     scheduler.add_job(lambda: _run_proactive_job('morning_planning'), 'cron',
                       hour=7, minute=30, id='morning_planning', replace_existing=True)
-    scheduler.add_job(lambda: _run_proactive_job('daily_review'), 'cron',
+    scheduler.add_job(_run_daily_review_interactive, 'cron',
                       hour=22, minute=0, id='daily_review', replace_existing=True)
     scheduler.add_job(lambda: _run_proactive_job('weekly_review'), 'cron',
                       day_of_week='sun', hour=21, minute=0, id='weekly_review', replace_existing=True)
@@ -1268,6 +1527,7 @@ async def chat(request: Request):
         messages = [{"role": "system", "content": build_system_prompt()}, *history]
         reply = ""
         trace = []
+        create_task_count = 0
 
         for _ in range(MAX_TOOL_ROUNDS):
             response = client.chat.completions.create(
@@ -1288,7 +1548,16 @@ async def chat(request: Request):
                 break
 
             for tc in msg.tool_calls:
-                result = _run_tool(tc.function.name, tc.function.arguments)
+                # Guard: chặn tạo task quá nhiều trong 1 lượt (chống LLM tạo bừa).
+                if tc.function.name == "create_task":
+                    create_task_count += 1
+                    if create_task_count > MAX_CREATE_TASKS_PER_TURN:
+                        result = (f"Đã tạo đủ task trong lượt này (tối đa {MAX_CREATE_TASKS_PER_TURN}). "
+                                  f"Hãy gộp các việc còn lại hoặc đợi lượt sau.")
+                    else:
+                        result = _run_tool(tc.function.name, tc.function.arguments)
+                else:
+                    result = _run_tool(tc.function.name, tc.function.arguments)
                 messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
                 trace.append({
                     "kind": "tool", "name": tc.function.name,
@@ -1303,7 +1572,11 @@ async def chat(request: Request):
             for t in ths:
                 trace.append({"kind": "thought", "text": t[:400]})
 
-        msg_add("assistant", reply)
+        # Lưu trace vào metadata_json (cap kích thước) để hiển thị lại khi load app.
+        trace_to_store = trace[-24:] if trace else None
+        if trace_to_store and len(json.dumps(trace_to_store, ensure_ascii=False)) > 20000:
+            trace_to_store = trace_to_store[-12:]
+        msg_add("assistant", reply, metadata={"trace": trace_to_store} if trace_to_store else None)
         out = {"reply": reply}
         if trace:
             out["trace"] = trace
@@ -1360,6 +1633,49 @@ async def complete_task_endpoint(task_id: int):
         return JSONResponse(r, status_code=404)
     return JSONResponse(r)
 
+@app.patch("/tasks/{task_id}")
+async def update_task_endpoint(task_id: int, request: Request):
+    data = await request.json()
+    fields = {}
+    for k in ("title", "notes", "status", "priority", "due_at", "remind_at", "start_at", "repeat_rule"):
+        if k not in data:
+            continue
+        v = data[k]
+        # Chuỗi rỗng cho các cột thời gian → xoá (NULL); các trường text giữ nguyên.
+        if k in ("due_at", "remind_at", "start_at") and v == "":
+            v = None
+        if v is not None or k in ("due_at", "remind_at", "start_at"):
+            fields[k] = v
+    r = task_update(task_id, **fields)
+    if not r.get("ok"):
+        return JSONResponse(r, status_code=404)
+    # Đặt lại lịch nhắc nếu remind_at đổi; gỡ nếu xoá.
+    if "remind_at" in fields:
+        if fields["remind_at"]:
+            try:
+                t = next((x for x in task_list("all") if x["id"] == task_id), None)
+                dt = datetime.strptime(fields["remind_at"], "%Y-%m-%d %H:%M").replace(tzinfo=TZ)
+                _schedule_task_reminder(task_id, dt, (t or {}).get("title", f"Task {task_id}"))
+            except Exception:
+                pass
+        else:
+            try:
+                scheduler.remove_job(f"task-remind-{task_id}")
+            except Exception:
+                pass
+    return JSONResponse(r)
+
+@app.delete("/tasks/{task_id}")
+async def delete_task_endpoint(task_id: int):
+    try:
+        scheduler.remove_job(f"task-remind-{task_id}")
+    except Exception:
+        pass
+    r = task_delete(task_id)
+    if not r.get("ok"):
+        return JSONResponse(r, status_code=404)
+    return JSONResponse(r)
+
 
 # ── Memory API ────────────────────────────────────────────────────────────
 @app.post("/memory/save")
@@ -1385,6 +1701,23 @@ async def memories_endpoint(limit: int = 50):
     limit = max(1, min(int(limit), 200))
     return JSONResponse({"items": memory_list(limit)})
 
+@app.patch("/memories/{memory_id}")
+async def update_memory_endpoint(memory_id: int, request: Request):
+    data = await request.json()
+    fields = {k: v for k, v in data.items()
+              if k in ("content", "type", "importance") and v is not None}
+    r = memory_update(memory_id, **fields)
+    if not r.get("ok"):
+        return JSONResponse(r, status_code=404)
+    return JSONResponse(r)
+
+@app.delete("/memories/{memory_id}")
+async def delete_memory_endpoint(memory_id: int):
+    r = memory_delete(memory_id)
+    if not r.get("ok"):
+        return JSONResponse(r, status_code=404)
+    return JSONResponse(r)
+
 
 # ── Pending API (jobs chưa đọc) ───────────────────────────────────────────
 @app.get("/pending")
@@ -1395,13 +1728,88 @@ async def pending():
     out = []
     for job in items:
         payload = job.get("payload") or {}
-        out.append({
+        item = {
             "id": job["id"],
             "type": job["type"],
-            "period": payload.get("period", ""),
+            "period": payload.get("period", "") or payload.get("date", ""),
             "content": payload.get("content", ""),
-        })
+            "interactive": bool(payload.get("interactive", False)),
+        }
+        if job["type"] == "morning_planning" and payload.get("slots"):
+            item["schedule_id"] = job["id"]
+            item["schedule_slots"] = payload["slots"]
+        out.append(item)
     return JSONResponse({"items": out})
+
+@app.get("/daily-review/today")
+async def daily_review_today():
+    """Trả tasks hôm nay + job daily_review pending interactive của hôm nay (nếu có)."""
+    data = task_list_today()
+    with db() as c:
+        r = c.execute(
+            "SELECT id FROM jobs WHERE type='daily_review' AND status='pending' "
+            "AND payload_json LIKE ? ORDER BY id DESC LIMIT 1",
+            (f'%{data["date"]}"%',)).fetchone()
+    return JSONResponse({
+        "job_id": r["id"] if r else None,
+        "date": data["date"],
+        "pending_today": data["pending_today"],
+        "done_today": data["done_today"],
+    })
+
+@app.post("/daily-review/submit")
+async def daily_review_submit(request: Request):
+    """Tổng kết ngày hardcode (KHÔNG LLM): complete các task được tick + build text + lưu journal."""
+    data = await request.json()
+    job_id = data.get("job_id")
+    completed = data.get("completed_task_ids", []) or []
+    other_done = (data.get("other_done", "") or "").strip()
+    today = datetime.now(TZ).strftime("%Y-%m-%d")
+
+    done_titles = []
+    for tid in completed:
+        try:
+            tid = int(tid)
+        except (TypeError, ValueError):
+            continue
+        with db() as c:
+            row = c.execute("SELECT title FROM tasks WHERE id=?", (tid,)).fetchone()
+        if row:
+            task_complete(tid)
+            done_titles.append(row["title"])
+
+    td = task_list_today()
+    completed_int = []
+    for x in completed:
+        try:
+            completed_int.append(int(x))
+        except (TypeError, ValueError):
+            continue
+    still_open = [t for t in td["pending_today"] if t["id"] not in completed_int]
+
+    parts = [f"## Tổng kết ngày {today}"]
+    if done_titles:
+        parts.append("**Đã hoàn thành:**\n" + "\n".join(f"- {t}" for t in done_titles))
+    if still_open:
+        parts.append("**Còn dang dở:**\n" + "\n".join(f"- {t['title']}" for t in still_open))
+    if other_done:
+        parts.append(f"**Ghi chú thêm:**\n{other_done}")
+    if not done_titles and not still_open and not other_done:
+        parts.append("Hôm nay chưa có việc nào được ghi nhận. Ngày mai cố gắng nhé!")
+    summary = "\n\n".join(parts)
+
+    memory_save(summary, type="journal", importance=3)
+
+    if job_id:
+        try:
+            job_mark_read(int(job_id))
+        except Exception:
+            pass
+    else:
+        job_create("daily_review", payload={"interactive": True, "date": today,
+                                            "content": summary, "submitted": True})
+
+    return JSONResponse({"ok": True, "text": summary})
 
 @app.post("/pending/read")
 async def pending_read(request: Request):
@@ -1412,6 +1820,53 @@ async def pending_read(request: Request):
         return JSONResponse({"ok": True})
     except (TypeError, ValueError):
         return JSONResponse({"error": "id không hợp lệ"}, status_code=400)
+
+@app.post("/approve-morning")
+async def approve_morning(request: Request):
+    """User duyệt lịch morning planning → tạo tasks từ slots (dedup + remind + no-late-night)."""
+    data = await request.json()
+    job_id = data.get("job_id")
+    slots = data.get("slots", []) or []
+
+    # Lấy slots từ job payload nếu không gửi (Duyệt thẳng).
+    if not slots and job_id:
+        with db() as c:
+            r = c.execute("SELECT payload_json, status FROM jobs WHERE id=?", (int(job_id),)).fetchone()
+        if r:
+            try:
+                payload = json.loads(r["payload_json"] or "{}")
+            except Exception:
+                payload = {}
+            slots = payload.get("slots") or []
+            if r["status"] == "done":
+                return JSONResponse({"ok": False, "error": "đã duyệt"}, status_code=400)
+
+    if not slots:
+        return JSONResponse({"ok": False, "error": "không có slots"}, status_code=400)
+
+    tomorrow = (datetime.now(TZ) + timedelta(days=1)).strftime("%Y-%m-%d")
+    seen_times = set()
+    created, skipped = [], []
+    for s in sorted(slots, key=lambda x: x.get("time", "99:99")):
+        t = s.get("time", "")
+        if t in seen_times:
+            skipped.append({"title": s.get("title", ""), "reason": "overlap"})
+            continue
+        seen_times.add(t)
+        res = task_create_from_slot(s, tomorrow)
+        if res.get("ok"):
+            created.append(res)
+        else:
+            skipped.append({"title": s.get("title", ""), "reason": res.get("skipped")})
+
+    if job_id:
+        try:
+            job_update_payload(int(job_id), {"slots": slots, "date": tomorrow, "approved": True})
+            job_mark_read(int(job_id))
+        except Exception:
+            pass
+    return JSONResponse({"ok": True, "created": len(created), "skipped": len(skipped),
+                         "tasks": created, "skipped_details": skipped})
 
 
 # ── Debug endpoints ───────────────────────────────────────────────────────
@@ -1448,6 +1903,26 @@ async def debug_proactive(job: str = "daily_review"):
         return JSONResponse({"error": f"job không hợp lệ: {job}"}, status_code=400)
     return JSONResponse(_run_proactive_job(job))
 
+@app.get("/debug-review-nudge")
+async def debug_review_nudge():
+    """Test daily review interactive (KHÔNG LLM): tạo job pending + push."""
+    return JSONResponse(_run_daily_review_interactive())
+
+@app.get("/debug-seed-morning")
+async def debug_seed_morning():
+    """Test card duyệt morning planning (KHÔNG cần LLM): insert job với slots mẫu."""
+    tomorrow = (datetime.now(TZ) + timedelta(days=1)).strftime("%Y-%m-%d")
+    slots = [
+        {"time": "07:00", "title": "Tập chạy buổi sáng", "category": "exercise", "priority": 2, "remind": True},
+        {"time": "09:00", "title": "Làm bài tập Toán", "category": "learning", "priority": 1, "remind": True},
+        {"time": "14:00", "title": "Viết báo cáo tuần", "category": "work", "priority": 1, "remind": True},
+        {"time": "18:00", "title": "Nghỉ + đi dạo", "category": "rest", "priority": 4, "remind": False},
+        {"time": "20:00", "title": "Đọc sách", "category": "learning", "priority": 3, "remind": True},
+    ]
+    jid = job_create("morning_planning", payload={"slots": slots, "date": tomorrow,
+                                                  "content": "Lịch mẫu để test duyệt."})
+    return JSONResponse({"ok": True, "job_id": jid["id"], "date": tomorrow, "slots": slots})
+
 @app.get("/debug-state")
 async def debug_state():
     with db() as c:
@@ -1471,6 +1946,7 @@ async def debug_tasks():
     return JSONResponse({
         "pending": task_list("pending"),
         "pending_reminders": task_pending_reminders(),
+        "today": task_list_today(),
         "scheduled_jobs": [{"id": j.id, "next_run": str(j.next_run_time)} for j in scheduler.get_jobs()],
     })
 

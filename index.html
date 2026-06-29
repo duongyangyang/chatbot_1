@@ -370,6 +370,24 @@
     cursor: pointer; font-family: var(--font);
   }
 
+  /* Daily review form (interactive, hardcode) */
+  .review-form { border: 1px solid var(--accent); border-left-width: 3px; border-radius: 12px; background: var(--bg); padding: 12px; }
+  .review-head { font-size: 13px; color: var(--accent); margin-bottom: 4px; font-weight: 500; }
+  .review-greet { font-size: 13px; margin-bottom: 8px; color: var(--text); }
+  .review-checklist { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+  .review-task { display: flex; gap: 8px; align-items: center; font-size: 13px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+  .review-task.done { opacity: .6; text-decoration: line-through; }
+  .review-task input { accent-color: var(--accent); }
+  .review-other { width: 100%; box-sizing: border-box; min-height: 60px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 8px; font-family: var(--font); font-size: 13px; resize: vertical; }
+  .review-submit { margin-top: 8px; background: var(--accent); border: none; border-radius: 8px; color: #fff; padding: 9px 14px; font-size: 14px; cursor: pointer; font-family: var(--font); }
+
+  /* Schedule slot edit (Morning Planning) */
+  .slot.editing { flex-direction: column; gap: 4px; }
+  .slot-edit-input { background: #101010; border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 4px 6px; font-size: 12px; font-family: var(--font); }
+  .slot .slot-edit-row { display: flex; gap: 6px; align-items: center; }
+  .slot .slot-edit-row input.slot-time-edit { width: 70px; }
+  .slot .slot-edit-row input.slot-title-edit { flex: 1; }
+
   /* Markdown trong bubble AI */
   .bubble p { margin: 0; }
   .md-h { font-weight: 600; margin: 8px 0 4px; }
@@ -687,6 +705,22 @@
   .mem-importance { color: #facc15; letter-spacing: 1px; }
   .mem-time { margin-left: auto; }
 
+  /* CRUD inline forms (Settings) */
+  .crud-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; padding: 8px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); margin-bottom: 10px; }
+  .crud-form input, .crud-form select, .crud-form textarea { background: #101010; border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; color: var(--text); font-family: var(--font); font-size: 13px; }
+  .crud-form input[type=text], .crud-form input[type=datetime-local] { flex: 1; min-width: 120px; }
+  .crud-form textarea { flex: 1 1 100%; min-height: 44px; resize: vertical; }
+  .crud-form button { background: var(--accent); border: 0; border-radius: 8px; color: #fff; padding: 8px 14px; font-size: 13px; font-family: var(--font); cursor: pointer; }
+  .crud-form label { font-size: 10px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
+  .task-actions, .mem-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .mini-act-btn { background: #141414; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); font-size: 11px; padding: 4px 9px; cursor: pointer; font-family: var(--font); }
+  .mini-act-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .mini-act-btn.danger:hover { border-color: #ef4444; color: #f87171; }
+  .task-edit-form, .mem-edit-form { display: flex; flex-direction: column; gap: 6px; }
+  .task-edit-form input, .task-edit-form select, .mem-edit-form input, .mem-edit-form textarea, .mem-edit-form select { background: #101010; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; color: var(--text); font-size: 12px; font-family: var(--font); }
+  .task-edit-form .edit-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .edit-save-row { display: flex; gap: 6px; }
+
 </style>
 </head>
 <body>
@@ -716,7 +750,7 @@
         <div class="chip" onclick="sendSuggestion('Hôm nay tôi cần làm gì?')">📋 Việc hôm nay</div>
         <div class="chip" onclick="sendSuggestion('Nhắc tôi lúc 3h chiều họp')">⏰ Đặt nhắc nhở</div>
         <div class="chip" onclick="sendSuggestion('Lên lịch cho ngày mai')">🗓️ Lên lịch ngày mai</div>
-        <div class="chip" onclick="sendSuggestion('Tổng kết hôm nay')">📝 Tổng kết ngày</div>
+        <div class="chip" onclick="openDailyReview()">📝 Tổng kết ngày</div>
       </div>
     </div>
   </div>
@@ -844,11 +878,13 @@ function renderScheduleCard(schedule) {
   const slots = schedule.slots || [];
   const sid = schedule.id;
   const date = escapeHtml(schedule.date || '');
-  const slotHtml = slots.map(s =>
-    `<div class="slot"><span class="slot-time">${escapeHtml(s.time||'')}</span><span class="slot-title">${escapeHtml(s.title||'')}</span></div>`
+  const slotHtml = slots.map((s, i) =>
+    `<div class="slot" data-slot="${i}" data-time="${escapeHtml(s.time||'')}" data-title="${escapeHtml(s.title||'')}">
+       <span class="slot-time">${escapeHtml(s.time||'')}</span><span class="slot-title">${escapeHtml(s.title||'')}</span>
+     </div>`
   ).join('');
   return `
-    <div class="schedule-card" id="sched-${sid}">
+    <div class="schedule-card" id="sched-${sid}" data-slots='${JSON.stringify(slots).replace(/'/g,"&#39;")}'>
       <div class="sched-header">📋 Lịch ngày ${date}</div>
       <div class="sched-slots">${slotHtml}</div>
       <div class="sched-actions">
@@ -858,25 +894,44 @@ function renderScheduleCard(schedule) {
     </div>`;
 }
 
+function collectSlotsFromCard(card) {
+  if (!card) return [];
+  // Nếu đang edit → đọc input; không thì đọc data attributes.
+  if (card.classList.contains('editing')) {
+    return Array.from(card.querySelectorAll('.slot')).map(sl => {
+      const ti = sl.querySelector('.slot-time-edit');
+      const tt = sl.querySelector('.slot-title-edit');
+      return { time: (ti?.value || '').trim(), title: (tt?.value || '').trim() };
+    }).filter(s => s.time && s.title);
+  }
+  return Array.from(card.querySelectorAll('.slot')).map(sl => ({
+    time: sl.dataset.time || '', title: sl.dataset.title || '',
+  })).filter(s => s.time && s.title);
+}
+
 async function approveSchedule(sid) {
+  const card = document.getElementById('sched-' + sid);
+  const slots = collectSlotsFromCard(card);
+  if (!slots.length) { showToast('Không có slot hợp lệ'); return; }
   try {
-    const res = await fetch('/approve-schedule', {
+    const res = await fetch('/approve-morning', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ schedule_id: sid })
+      body: JSON.stringify({ job_id: sid, slots })
     });
     const data = await res.json();
     if (res.ok && data.ok) {
-      const card = document.getElementById('sched-' + sid);
       if (card) {
         card.querySelectorAll('.sched-actions').forEach(a => a.remove());
         const tag = document.createElement('div');
-        tag.className = 'sched-approved'; tag.textContent = '✓ Đã duyệt — đã tạo sự kiện + nhắc';
+        tag.className = 'sched-approved';
+        tag.textContent = `✓ Đã duyệt — tạo ${data.created} task` + (data.skipped ? `, bỏ ${data.skipped} (trùng/lỗi)` : '');
         card.appendChild(tag);
       }
-      showToast('Đã duyệt lịch ✓');
-    } else if (data.needs_regen) {
-      showToast('Hãy gửi yêu cầu sửa lại');
+      // Gỡ pending row tương ứng (nếu có).
+      const prow = document.querySelector(`[data-pending-id="${sid}"]`);
+      if (prow) prow.remove();
+      showToast(`Đã duyệt lịch ✓ (tạo ${data.created} task)`);
     } else {
       showToast(data.error || 'Duyệt thất bại');
     }
@@ -887,11 +942,36 @@ async function approveSchedule(sid) {
 
 function editSchedule(sid) {
   const card = document.getElementById('sched-' + sid);
-  const date = card ? (card.querySelector('.sched-header')?.textContent || '') : '';
-  const input = document.getElementById('msg-input');
-  input.value = `Sửa lịch ${date}: `;
-  input.focus();
-  autoResize(input);
+  if (!card) return;
+  const editBtn = card.querySelector('.sched-btn.edit');
+  if (card.classList.contains('editing')) {
+    // Xong sửa: lưu input → data + text, bỏ edit.
+    card.querySelectorAll('.slot').forEach(sl => {
+      const ti = sl.querySelector('.slot-time-edit');
+      const tt = sl.querySelector('.slot-title-edit');
+      const time = (ti?.value || '').trim();
+      const title = (tt?.value || '').trim();
+      sl.dataset.time = time;
+      sl.dataset.title = title;
+      sl.classList.remove('editing');
+      sl.innerHTML = `<span class="slot-time">${escapeHtml(time)}</span><span class="slot-title">${escapeHtml(title)}</span>`;
+    });
+    card.classList.remove('editing');
+    if (editBtn) editBtn.textContent = '✏️ Sửa';
+  } else {
+    // Bật edit: chuyển mỗi slot sang input.
+    card.querySelectorAll('.slot').forEach(sl => {
+      sl.classList.add('editing');
+      const time = sl.dataset.time || '';
+      const title = sl.dataset.title || '';
+      sl.innerHTML = `<div class="slot-edit-row">
+        <input class="slot-edit-input slot-time-edit" type="time" value="${escapeHtml(time)}">
+        <input class="slot-edit-input slot-title-edit" type="text" value="${escapeHtml(title)}">
+      </div>`;
+    });
+    card.classList.add('editing');
+    if (editBtn) editBtn.textContent = '✓ Xong sửa';
+  }
 }
 
 function showTyping() {
@@ -1210,7 +1290,11 @@ async function loadHistory() {
       let time = '';
       try { time = new Date(it.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }); }
       catch (e) {}
-      appendMessage(role, it.content || '', time ? { time } : undefined);
+      const extra = time ? { time } : undefined;
+      if (Array.isArray(it.trace) && it.trace.length) {
+        (extra || (extra = {})).trace = it.trace;
+      }
+      appendMessage(role, it.content || '', extra);
     }
     const msgs = document.getElementById('messages');
     msgs.scrollTop = msgs.scrollHeight;
@@ -1370,7 +1454,7 @@ function taskPriorityClass(priority) {
   return 'p3';
 }
 
-function renderTaskGroup(title, items) {
+function renderTaskGroup(title, items, editable) {
   if (!items.length) return '';
   let html = `<div class="task-section-title">${escapeHtml(title)} (${items.length})</div>`;
   html += items.map(it => {
@@ -1378,7 +1462,13 @@ function renderTaskGroup(title, items) {
     const due = it.due_at ? formatDateTimeShort(it.due_at, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
     const notes = it.notes || it.note || '';
     const prio = Number(it.priority || 3);
-    return `<div class="task-item ${done ? 'done' : ''}">
+    const actions = editable ? `
+      <div class="task-actions">
+        <button class="mini-act-btn" onclick="toggleTask(${it.id}, '${it.status}')">${done ? '↺ Mở lại' : '✓ Xong'}</button>
+        <button class="mini-act-btn" onclick="editTaskInline(${it.id})">✎ Sửa</button>
+        <button class="mini-act-btn danger" onclick="deleteTask(${it.id})">🗑 Xoá</button>
+      </div>` : '';
+    return `<div class="task-item ${done ? 'done' : ''}" id="task-row-${it.id}" data-task='${JSON.stringify(taskPlain(it)).replace(/'/g,"&#39;")}'>
       <span class="task-priority ${taskPriorityClass(prio)}">P${prio}</span>
       <div class="task-main">
         <div class="task-meta-row">
@@ -1387,16 +1477,23 @@ function renderTaskGroup(title, items) {
         </div>
         <div class="task-title">${escapeHtml(it.title || '')}</div>
         ${notes ? `<div class="task-notes">${escapeHtml(notes)}</div>` : ''}
+        ${actions}
       </div>
     </div>`;
   }).join('');
   return html;
 }
 
-function renderTaskItems(items) {
+function taskPlain(it) {
+  return { id: it.id, title: it.title || '', notes: it.notes || '', status: it.status || 'pending',
+           priority: Number(it.priority || 3), due_at: it.due_at || '', remind_at: it.remind_at || '',
+           start_at: it.start_at || '' };
+}
+
+function renderTaskItems(items, editable) {
   const open = items.filter(it => it.status !== 'done');
   const done = items.filter(it => it.status === 'done');
-  return renderTaskGroup('Đang mở', open) + renderTaskGroup('Đã xong', done);
+  return renderTaskGroup('Đang mở', open, editable) + renderTaskGroup('Đã xong', done, editable);
 }
 
 function memoryTypeLabel(type) {
@@ -1414,16 +1511,23 @@ function memoryTypeClass(type) {
   return ['fact', 'preference', 'journal', 'note'].includes(t) ? t : 'note';
 }
 
-function renderMemoryItems(items) {
+function renderMemoryItems(items, editable) {
   return items.map(it => {
     const type = String(it.type || 'note').toLowerCase();
-    return `<div class="mem-item">
+    const imp = Number(it.importance || 1);
+    const actions = editable ? `
+      <div class="mem-actions">
+        <button class="mini-act-btn" onclick="editMemoryInline(${it.id})">✎ Sửa</button>
+        <button class="mini-act-btn danger" onclick="deleteMemory(${it.id})">🗑 Xoá</button>
+      </div>` : '';
+    return `<div class="mem-item" id="mem-row-${it.id}" data-mem='${JSON.stringify({id:it.id,content:it.content||'',type,importance:imp}).replace(/'/g,"&#39;")}'>
       <div class="mem-meta-row">
         <span class="mem-type-badge ${memoryTypeClass(type)}">${escapeHtml(memoryTypeLabel(type))}</span>
-        <span class="mem-importance" title="Độ quan trọng ${escapeHtml(String(it.importance || 1))}/5">${renderImportance(it.importance)}</span>
+        <span class="mem-importance" title="Độ quan trọng ${escapeHtml(String(imp))}/5">${renderImportance(imp)}</span>
         <span class="mem-time">${escapeHtml(relativeTime(it.created_at || ''))}</span>
       </div>
       <div class="mem-content">${escapeHtml(it.content || '')}</div>
+      ${actions}
     </div>`;
   }).join('');
 }
@@ -1433,14 +1537,16 @@ function renderSettingsData(kind, items) {
   if (!box) return;
   const title = kind === 'history' ? 'Lịch sử chat' : kind === 'tasks' ? 'Tasks' : 'Memories';
   let html = renderDataHead(title, items.length, kind);
-  if (!items.length) {
+  if (kind === 'tasks') {
+    html += renderTaskAddForm();
+    html += items.length ? renderTaskItems(items, true) : '<div class="settings-data-empty">Chưa có task nào.</div>';
+  } else if (kind === 'memories') {
+    html += renderMemoryAddForm();
+    html += items.length ? renderMemoryItems(items, true) : '<div class="settings-data-empty">Chưa có ghi nhớ nào.</div>';
+  } else if (!items.length) {
     html += '<div class="settings-data-empty">Chưa có dữ liệu.</div>';
-  } else if (kind === 'history') {
-    html += renderHistoryItems(items);
-  } else if (kind === 'tasks') {
-    html += renderTaskItems(items);
   } else {
-    html += renderMemoryItems(items);
+    html += renderHistoryItems(items);
   }
   box.innerHTML = html;
   box.classList.add('open');
@@ -1470,6 +1576,204 @@ async function showSettingsData(kind) {
     if (box) box.innerHTML = `<div class="settings-data-head"><span>Lỗi</span><button class="settings-data-close" onclick="closeSettingsData('${kind}')" type="button" aria-label="Đóng">×</button></div><div class="settings-data-empty">Không tải được dữ liệu.</div>`;
     showToast('Không tải được dữ liệu');
   }
+}
+
+// ── Helpers datetime-local ↔ backend "YYYY-MM-DD HH:MM" ─────────────────
+function dtLocalToBackend(v) { return (v || '').replace('T', ' '); }
+function backendToDtLocal(v) {
+  if (!v) return '';
+  const s = String(v).replace(' ', 'T');
+  return s.length >= 16 ? s.slice(0, 16) : s;
+}
+
+// ── Task CRUD (inline trong Settings) ───────────────────────────────────
+function renderTaskAddForm() {
+  return `<div class="crud-form">
+    <input id="task-add-title" type="text" placeholder="Tên việc cần làm...">
+    <select id="task-add-priority">
+      <option value="1">P1 Khẩn</option>
+      <option value="2">P2 Quan trọng</option>
+      <option value="3" selected>P3 Thường</option>
+      <option value="4">P4 Khi rảnh</option>
+    </select>
+    <label>Hạn<input id="task-add-due" type="datetime-local"></label>
+    <label>Nhắc<input id="task-add-remind" type="datetime-local"></label>
+    <button onclick="addTask()" type="button">+ Thêm</button>
+  </div>`;
+}
+
+async function addTask() {
+  const title = document.getElementById('task-add-title').value.trim();
+  if (!title) { showToast('Nhập tên việc'); return; }
+  const body = {
+    title,
+    priority: parseInt(document.getElementById('task-add-priority').value, 10) || 3,
+    due_at: dtLocalToBackend(document.getElementById('task-add-due').value),
+    remind_at: dtLocalToBackend(document.getElementById('task-add-remind').value),
+  };
+  try {
+    const res = await fetch('/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error('server');
+    showToast('Đã thêm task ✓');
+    showSettingsData('tasks');
+  } catch (e) { showToast('Lỗi thêm task'); }
+}
+
+async function toggleTask(id, status) {
+  try {
+    if (status === 'done') {
+      const res = await fetch(`/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'pending' }) });
+      if (!res.ok) throw new Error('server');
+      showToast('Đã mở lại task');
+    } else {
+      const res = await fetch(`/tasks/${id}/complete`, { method: 'POST' });
+      if (!res.ok) throw new Error('server');
+      showToast('Đã đánh dấu xong ✓');
+    }
+    showSettingsData('tasks');
+  } catch (e) { showToast('Lỗi cập nhật task'); }
+}
+
+function editTaskInline(id) {
+  const row = document.getElementById('task-row-' + id);
+  if (!row) return;
+  const t = JSON.parse(row.dataset.task || '{}');
+  const main = row.querySelector('.task-main');
+  main.innerHTML = `<div class="task-edit-form">
+    <input id="tk-edit-title-${id}" type="text" value="${escapeHtml(t.title)}">
+    <div class="edit-row">
+      <select id="tk-edit-prio-${id}">
+        <option value="1"${t.priority===1?' selected':''}>P1 Khẩn</option>
+        <option value="2"${t.priority===2?' selected':''}>P2 Quan trọng</option>
+        <option value="3"${t.priority===3?' selected':''}>P3 Thường</option>
+        <option value="4"${t.priority===4?' selected':''}>P4 Khi rảnh</option>
+      </select>
+      <label>Hạn<input id="tk-edit-due-${id}" type="datetime-local" value="${backendToDtLocal(t.due_at)}"></label>
+      <label>Nhắc<input id="tk-edit-remind-${id}" type="datetime-local" value="${backendToDtLocal(t.remind_at)}"></label>
+    </div>
+    <input id="tk-edit-notes-${id}" type="text" value="${escapeHtml(t.notes || '')}" placeholder="Ghi chú...">
+    <div class="edit-save-row">
+      <button class="mini-act-btn" onclick="saveTaskInline(${id})" style="border-color:#22c55e;color:#4ade80">Lưu</button>
+      <button class="mini-act-btn" onclick="showSettingsData('tasks')">Huỷ</button>
+    </div>
+  </div>`;
+}
+
+async function saveTaskInline(id) {
+  const body = {
+    title: document.getElementById(`tk-edit-title-${id}`).value.trim(),
+    notes: document.getElementById(`tk-edit-notes-${id}`).value,
+    priority: parseInt(document.getElementById(`tk-edit-prio-${id}`).value, 10),
+    due_at: dtLocalToBackend(document.getElementById(`tk-edit-due-${id}`).value),
+    remind_at: dtLocalToBackend(document.getElementById(`tk-edit-remind-${id}`).value),
+  };
+  if (!body.title) { showToast('Tên việc không được trống'); return; }
+  try {
+    const res = await fetch(`/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error('server');
+    showToast('Đã lưu ✓');
+    showSettingsData('tasks');
+  } catch (e) { showToast('Lỗi lưu task'); }
+}
+
+async function deleteTask(id) {
+  if (!confirm('Xoá task này?')) return;
+  try {
+    const res = await fetch(`/tasks/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('server');
+    showToast('Đã xoá task');
+    showSettingsData('tasks');
+  } catch (e) { showToast('Lỗi xoá task'); }
+}
+
+// ── Memory CRUD (inline trong Settings) ─────────────────────────────────
+function renderMemoryAddForm() {
+  return `<div class="crud-form">
+    <textarea id="mem-add-content" placeholder="Nội dung ghi nhớ..."></textarea>
+    <select id="mem-add-type">
+      <option value="note">Ghi chú</option>
+      <option value="fact">Sự thật</option>
+      <option value="preference">Sở thích</option>
+      <option value="event">Sự kiện</option>
+      <option value="journal">Nhật ký</option>
+    </select>
+    <select id="mem-add-importance">
+      <option value="1">● 1</option><option value="2">●● 2</option>
+      <option value="3" selected>●●● 3</option><option value="4">●●●● 4</option>
+      <option value="5">●●●●● 5</option>
+    </select>
+    <button onclick="addMemory()" type="button">+ Thêm</button>
+  </div>`;
+}
+
+async function addMemory() {
+  const content = document.getElementById('mem-add-content').value.trim();
+  if (!content) { showToast('Nhập nội dung ghi nhớ'); return; }
+  const body = {
+    content,
+    type: document.getElementById('mem-add-type').value,
+    importance: parseInt(document.getElementById('mem-add-importance').value, 10) || 1,
+  };
+  try {
+    const res = await fetch('/memory/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error('server');
+    showToast('Đã lưu ghi nhớ ✓');
+    showSettingsData('memories');
+  } catch (e) { showToast('Lỗi thêm ghi nhớ'); }
+}
+
+function editMemoryInline(id) {
+  const row = document.getElementById('mem-row-' + id);
+  if (!row) return;
+  const m = JSON.parse(row.dataset.mem || '{}');
+  row.innerHTML = `<div class="mem-edit-form">
+    <textarea id="mem-edit-content-${id}" rows="3">${escapeHtml(m.content)}</textarea>
+    <div class="edit-row">
+      <select id="mem-edit-type-${id}">
+        <option value="note"${m.type==='note'?' selected':''}>Ghi chú</option>
+        <option value="fact"${m.type==='fact'?' selected':''}>Sự thật</option>
+        <option value="preference"${m.type==='preference'?' selected':''}>Sở thích</option>
+        <option value="event"${m.type==='event'?' selected':''}>Sự kiện</option>
+        <option value="journal"${m.type==='journal'?' selected':''}>Nhật ký</option>
+      </select>
+      <select id="mem-edit-imp-${id}">
+        <option value="1"${m.importance===1?' selected':''}>● 1</option>
+        <option value="2"${m.importance===2?' selected':''}>●● 2</option>
+        <option value="3"${m.importance===3?' selected':''}>●●● 3</option>
+        <option value="4"${m.importance===4?' selected':''}>●●●● 4</option>
+        <option value="5"${m.importance===5?' selected':''}>●●●●● 5</option>
+      </select>
+    </div>
+    <div class="edit-save-row">
+      <button class="mini-act-btn" onclick="saveMemoryInline(${id})" style="border-color:#22c55e;color:#4ade80">Lưu</button>
+      <button class="mini-act-btn" onclick="showSettingsData('memories')">Huỷ</button>
+    </div>
+  </div>`;
+}
+
+async function saveMemoryInline(id) {
+  const body = {
+    content: document.getElementById(`mem-edit-content-${id}`).value.trim(),
+    type: document.getElementById(`mem-edit-type-${id}`).value,
+    importance: parseInt(document.getElementById(`mem-edit-imp-${id}`).value, 10),
+  };
+  if (!body.content) { showToast('Nội dung không được trống'); return; }
+  try {
+    const res = await fetch(`/memories/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error('server');
+    showToast('Đã lưu ✓');
+    showSettingsData('memories');
+  } catch (e) { showToast('Lỗi lưu ghi nhớ'); }
+}
+
+async function deleteMemory(id) {
+  if (!confirm('Xoá ghi nhớ này?')) return;
+  try {
+    const res = await fetch(`/memories/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('server');
+    showToast('Đã xoá ghi nhớ');
+    showSettingsData('memories');
+  } catch (e) { showToast('Lỗi xoá ghi nhớ'); }
 }
 
 // Reset đoạn chat: xoá lịch sử trên server + xoá tin nhắn trên màn hình.
@@ -1519,6 +1823,11 @@ async function loadPending() {
 }
 
 function renderPending(it) {
+  // Daily review interactive → form hardcode (không phải card text).
+  if (it.type === 'daily_review' && it.interactive) {
+    renderReviewForm(it);
+    return;
+  }
   const msgs = document.getElementById('messages');
   const row = document.createElement('div');
   row.className = 'msg-row ai';
@@ -1526,7 +1835,7 @@ function renderPending(it) {
   const label = PENDING_LABEL[it.type] || 'Thư ký Kim';
   let inner = `<div class="pending-card">
     <div class="pending-head">${label} ${escapeHtml(it.period || '')}</div>
-    <div class="pending-body">${escapeHtml(it.content || '')}</div>`;
+    <div class="pending-body">${renderMarkdown(it.content || '')}</div>`;
   // Nếu là morning_planning có slots → render schedule card (chưa duyệt).
   if (it.type === 'morning_planning' && it.schedule_id && it.schedule_slots) {
     inner += renderScheduleCard({id: it.schedule_id, date: it.period, slots: it.schedule_slots});
@@ -1537,6 +1846,79 @@ function renderPending(it) {
     <div><div class="bubble">${inner}</div><div class="msg-time">${now()}</div></div>`;
   msgs.insertBefore(row, msgs.firstChild);
   msgs.scrollTop = msgs.scrollHeight;
+}
+
+async function renderReviewForm(it) {
+  // it có thể có _data (mở từ chip) hoặc cần fetch.
+  let data = it._data;
+  if (!data) {
+    try {
+      const res = await fetch('/daily-review/today');
+      data = await res.json();
+    } catch (e) { showToast('Không tải được tasks hôm nay'); return; }
+  }
+  const jobId = it.id != null ? it.id : data.job_id;
+  const date = data.date || it.period || '';
+  const pending = data.pending_today || [];
+  const done = data.done_today || [];
+
+  if (!hasMessages) { showEmpty(false); hasMessages = true; }
+  const msgs = document.getElementById('messages');
+  const row = document.createElement('div');
+  row.className = 'msg-row ai';
+  if (jobId != null) row.dataset.pendingId = jobId;
+
+  const pendHtml = pending.map(t =>
+    `<label class="review-task"><input type="checkbox" value="${t.id}"> ${escapeHtml(t.title)}</label>`).join('');
+  const doneHtml = done.map(t =>
+    `<label class="review-task done"><input type="checkbox" checked disabled> ${escapeHtml(t.title)}</label>`).join('');
+
+  row.innerHTML = `
+    <div class="msg-avatar"><img src="/static/icon.jpg" alt="Kim" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"></div>
+    <div><div class="bubble">
+      <div class="review-form">
+        <div class="review-head">Tổng kết ngày ${escapeHtml(date)}</div>
+        <div class="review-greet">Chào bạn, tổng kết nhanh hôm nay nhé? Tick các việc đã xong:</div>
+        <div class="review-checklist">${pendHtml}${doneHtml || '<div class="review-task done">Chưa có việc nào hôm nay</div>'}</div>
+        <textarea class="review-other" placeholder="Việc khác đã làm hôm nay (tuỳ chọn)..."></textarea>
+        <button class="review-submit" onclick="submitReview(${jobId == null ? 'null' : jobId})">Ghi nhận</button>
+      </div>
+    </div><div class="msg-time">${now()}</div></div>`;
+  msgs.insertBefore(row, msgs.firstChild);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+async function submitReview(jobId) {
+  const row = jobId != null
+    ? document.querySelector(`[data-pending-id="${jobId}"]`)
+    : document.querySelector('.review-form')?.closest('.msg-row');
+  if (!row) return;
+  const completed = Array.from(row.querySelectorAll('.review-checklist input[type=checkbox]:not([disabled]):checked'))
+    .map(cb => parseInt(cb.value, 10));
+  const other = (row.querySelector('.review-other')?.value || '').trim();
+  try {
+    const res = await fetch('/daily-review/submit', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: jobId, completed_task_ids: completed, other_done: other })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'server');
+    row.remove();
+    appendMessage('ai', data.text || 'Đã ghi nhận tổng kết.');
+    showToast('Đã ghi nhận tổng kết ✓');
+  } catch (e) {
+    showToast('Lỗi ghi nhận tổng kết');
+  }
+}
+
+async function openDailyReview() {
+  try {
+    const res = await fetch('/daily-review/today');
+    const data = await res.json();
+    renderReviewForm({ id: data.job_id, interactive: true, period: data.date, _data: data });
+  } catch (e) {
+    showToast('Không tải được tổng kết');
+  }
 }
 
 async function dismissPending(id) {
