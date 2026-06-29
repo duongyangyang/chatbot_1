@@ -1480,7 +1480,7 @@ async function resetChat() {
   try {
     const res = await fetch('/reset-chat', { method: 'POST' });
     if (res.ok) {
-      document.getElementById('messages').innerHTML = '';
+      document.querySelectorAll('#messages .msg-row').forEach(el => el.remove());
       hasMessages = false;
       showEmpty(true);
       closeSettings();
