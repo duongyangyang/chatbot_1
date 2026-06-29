@@ -1,7 +1,7 @@
 """
 Backend chính: FastAPI + OpenAI-compatible AI + Push Notification + Reminder
 """
-import os, json, asyncio, sqlite3
+import os, json, asyncio, sqlite3, base64, tempfile
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -27,6 +27,15 @@ OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.vilao.ai/v1")
 VAPID_PRIVATE   = os.getenv("VAPID_PRIVATE_KEY", "")
 VAPID_PUBLIC    = os.getenv("VAPID_PUBLIC_KEY", "")
 VAPID_EMAIL     = os.getenv("VAPID_EMAIL", "mailto:you@example.com")
+GITHUB_BACKUP_TOKEN  = os.getenv("GITHUB_BACKUP_TOKEN", "")
+GITHUB_BACKUP_OWNER  = os.getenv("GITHUB_BACKUP_OWNER", "")
+GITHUB_BACKUP_REPO   = os.getenv("GITHUB_BACKUP_REPO", "")
+GITHUB_BACKUP_BRANCH = os.getenv("GITHUB_BACKUP_BRANCH", "main")
+GITHUB_BACKUP_PATH   = os.getenv("GITHUB_BACKUP_PATH", "memory.db")
+try:
+    BACKUP_INTERVAL_MINUTES = max(1, int(os.getenv("BACKUP_INTERVAL_MINUTES", "10")))
+except ValueError:
+    BACKUP_INTERVAL_MINUTES = 10
 
 # pywebpush KHÔNG parse được PEM dưới dạng chuỗi (Vapid.from_string chỉ nhận
 # DER/raw base64, gặp PEM thì lỗi "ASN.1 parsing error: invalid length").
@@ -41,10 +50,14 @@ if VAPID_PRIVATE:
 
 # client được tạo động theo config của từng request
 
-# In-memory storage (thay bằng Redis/PostgreSQL sau)
-# → push_subscriptions vẫn RAM (cần re-tap 🔔 sau restart); task/reminder/history
-#   đã xuống SQLite (sống sót restart).
+# Push subscriptions được giữ trong RAM để gửi nhanh, nhưng nguồn chính là SQLite
+# (bảng push_subscriptions) để sống sót sau Render restart/restore.
 push_subscriptions: list[dict] = []
+
+_backup_dirty = True
+_backup_last_success = ""
+_backup_last_error = ""
+_backup_last_attempt = ""
 
 # ── SQLite storage (memory.db) ──────────────────────────────────────────
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "memory.db")
@@ -75,6 +88,13 @@ _DEFAULT_PROFILE = {
     "khu_vuc":  "đang ở Thượng Hải, quê nhà Hà Nội",
     "ghi_chu":  "Chú ý: Hạn chế dùng icon, không dùng dấu <---> và hạn chế để dòng trắng, nói chuyện cute đáng yêu.",
 }
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
+    """SQLite migration nhỏ: thêm column nếu DB cũ chưa có."""
+    cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+    if column not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
 
 def db_init():
@@ -182,18 +202,177 @@ def db_init():
               base_url TEXT DEFAULT '',
               model TEXT DEFAULT '',
               api_key_hint TEXT DEFAULT '',   -- API key thật, chỉ dùng server-side, KHÔNG trả ra GET endpoint
+              sync_id TEXT DEFAULT '',
+              updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS push_subscriptions(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              endpoint TEXT NOT NULL UNIQUE,
+              subscription_json TEXT NOT NULL,
+              created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL
             );
             """
         )
+        # DB cũ có thể đã có app_config trước khi thêm sync_id.
+        _ensure_column(c, "app_config", "sync_id", "TEXT DEFAULT ''")
         # Seed single-row tables (chỉ khi chưa có row id=1).
         c.execute("INSERT OR IGNORE INTO user_profile(id, ten, nghe, so_thich, khu_vuc, ghi_chu, updated_at) VALUES(1,?,?,?,?,?,?)",
                   (_DEFAULT_PROFILE["ten"], _DEFAULT_PROFILE["nghe"], _DEFAULT_PROFILE["so_thich"],
                    _DEFAULT_PROFILE["khu_vuc"], _DEFAULT_PROFILE["ghi_chu"], _now_iso()))
         c.execute("INSERT OR IGNORE INTO life_os_state(id, current_life_phase, top_3_priorities, current_risks, updated_at) VALUES(1,'','','',?)",
                   (_now_iso(),))
-        c.execute("INSERT OR IGNORE INTO app_config(id, base_url, model, api_key_hint, updated_at) VALUES(1,'','','',?)",
+        c.execute("INSERT OR IGNORE INTO app_config(id, base_url, model, api_key_hint, sync_id, updated_at) VALUES(1,'','','','',?)",
                   (_now_iso(),))
+
+
+# ── GitHub backup cho Render ephemeral filesystem ───────────────────────────
+def _mark_backup_dirty() -> None:
+    global _backup_dirty
+    _backup_dirty = True
+
+
+def _github_backup_configured() -> bool:
+    return bool(GITHUB_BACKUP_TOKEN and GITHUB_BACKUP_OWNER and GITHUB_BACKUP_REPO and GITHUB_BACKUP_PATH)
+
+
+def _github_headers() -> dict:
+    return {
+        "Authorization": f"Bearer {GITHUB_BACKUP_TOKEN}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+
+def _github_contents_url() -> str:
+    path = GITHUB_BACKUP_PATH.strip("/")
+    return f"https://api.github.com/repos/{GITHUB_BACKUP_OWNER}/{GITHUB_BACKUP_REPO}/contents/{path}"
+
+
+def _download_backup_from_github() -> Optional[bytes]:
+    if not _github_backup_configured():
+        return None
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            r = client.get(
+                _github_contents_url(),
+                headers=_github_headers(),
+                params={"ref": GITHUB_BACKUP_BRANCH},
+            )
+        if r.status_code == 404:
+            print("[backup] chưa có file backup trên GitHub")
+            return None
+        r.raise_for_status()
+        data = r.json()
+        content = (data.get("content") or "").replace("\n", "")
+        if not content:
+            return None
+        return base64.b64decode(content)
+    except Exception as e:
+        print(f"[backup] download error: {type(e).__name__}: {e}")
+        return None
+
+
+def _restore_db_from_github_if_needed() -> bool:
+    """Render có thể mất filesystem. Nếu DB local chưa có/rỗng, restore từ GitHub backup."""
+    if os.path.exists(DB_PATH) and os.path.getsize(DB_PATH) > 0:
+        return False
+    blob = _download_backup_from_github()
+    if not blob:
+        return False
+    with open(DB_PATH, "wb") as f:
+        f.write(blob)
+    print(f"[backup] restored memory.db từ GitHub ({len(blob)} bytes)")
+    return True
+
+
+def _snapshot_db_to_temp() -> str:
+    """Tạo snapshot SQLite nhất quán để upload, tránh đọc DB đang ghi dở."""
+    fd, path = tempfile.mkstemp(prefix="memory-backup-", suffix=".db")
+    os.close(fd)
+    src = sqlite3.connect(DB_PATH)
+    dst = sqlite3.connect(path)
+    try:
+        src.backup(dst)
+    finally:
+        dst.close()
+        src.close()
+    return path
+
+
+def _upload_backup_to_github() -> dict:
+    tmp = _snapshot_db_to_temp()
+    try:
+        with open(tmp, "rb") as f:
+            encoded = base64.b64encode(f.read()).decode()
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+
+    sha = None
+    with httpx.Client(timeout=60.0) as client:
+        current = client.get(
+            _github_contents_url(),
+            headers=_github_headers(),
+            params={"ref": GITHUB_BACKUP_BRANCH},
+        )
+        if current.status_code == 200:
+            sha = current.json().get("sha")
+        elif current.status_code != 404:
+            current.raise_for_status()
+
+        payload = {
+            "message": "Backup memory.db",
+            "content": encoded,
+            "branch": GITHUB_BACKUP_BRANCH,
+        }
+        if sha:
+            payload["sha"] = sha
+        r = client.put(_github_contents_url(), headers=_github_headers(), json=payload)
+        r.raise_for_status()
+        data = r.json()
+    return {"ok": True, "sha": (data.get("content") or {}).get("sha", "")}
+
+
+def backup_memory_db(force: bool = False) -> dict:
+    """Backup memory.db lên GitHub private repo. Không làm app crash nếu GitHub lỗi."""
+    global _backup_dirty, _backup_last_success, _backup_last_error, _backup_last_attempt
+    _backup_last_attempt = _now_iso()
+    if not _github_backup_configured():
+        _backup_last_error = "chưa cấu hình GitHub backup env vars"
+        return {"ok": False, "skipped": _backup_last_error}
+    if not os.path.exists(DB_PATH) or os.path.getsize(DB_PATH) == 0:
+        _backup_last_error = "memory.db chưa tồn tại hoặc rỗng"
+        return {"ok": False, "skipped": _backup_last_error}
+    if not force and not _backup_dirty:
+        return {"ok": True, "skipped": "không có thay đổi mới"}
+    try:
+        out = _upload_backup_to_github()
+        _backup_dirty = False
+        _backup_last_success = _now_iso()
+        _backup_last_error = ""
+        print(f"[backup] uploaded memory.db -> {GITHUB_BACKUP_OWNER}/{GITHUB_BACKUP_REPO}/{GITHUB_BACKUP_PATH}")
+        return out
+    except Exception as e:
+        _backup_last_error = f"{type(e).__name__}: {e}"
+        print(f"[backup] upload error: {_backup_last_error}")
+        return {"ok": False, "error": _backup_last_error}
+
+
+def _register_backup_job():
+    if not _github_backup_configured():
+        print("[backup] GitHub backup chưa cấu hình; bỏ qua job định kỳ")
+        return
+    scheduler.add_job(
+        lambda: backup_memory_db(force=False),
+        "interval",
+        minutes=BACKUP_INTERVAL_MINUTES,
+        id="github-memory-backup",
+        replace_existing=True,
+    )
+    print(f"[backup] scheduled every {BACKUP_INTERVAL_MINUTES} minutes")
 
 
 # ── Task CRUD ────────────────────────────────────────────────────────────
@@ -203,6 +382,7 @@ def task_create(title: str, note: str = "", due_at: str = "", priority: str = "n
             "INSERT INTO tasks(title, note, due_at, priority, created_at) VALUES(?,?,?,?,?)",
             (title, note or "", due_at or None, priority or "normal", _now_iso()),
         )
+        _mark_backup_dirty()
         return {"id": cur.lastrowid, "title": title}
 
 
@@ -220,6 +400,7 @@ def task_complete(task_id: int) -> dict:
         cur = c.execute("UPDATE tasks SET status='done' WHERE id=?", (task_id,))
         if cur.rowcount == 0:
             return {"ok": False, "error": f"không có task id {task_id}"}
+        _mark_backup_dirty()
         return {"ok": True, "id": task_id, "status": "done"}
 
 
@@ -237,6 +418,7 @@ def task_update(task_id: int, **fields) -> dict:
         cur = c.execute(f"UPDATE tasks SET {', '.join(sets)} WHERE id=?", vals)
         if cur.rowcount == 0:
             return {"ok": False, "error": f"không có task id {task_id}"}
+        _mark_backup_dirty()
         return {"ok": True, "id": task_id, "updated": [s.split('=')[0] for s in sets]}
 
 
@@ -245,6 +427,7 @@ def task_delete(task_id: int) -> dict:
         cur = c.execute("DELETE FROM tasks WHERE id=?", (task_id,))
         if cur.rowcount == 0:
             return {"ok": False, "error": f"không có task id {task_id}"}
+        _mark_backup_dirty()
         return {"ok": True, "id": task_id, "deleted": True}
 
 
@@ -255,6 +438,7 @@ def reminder_insert(run_at: str, message: str, source: str = "manual") -> int:
             "INSERT INTO reminders(run_at, message, fired, source) VALUES(?,?,0,?)",
             (run_at, message, source),
         )
+        _mark_backup_dirty()
         return cur.lastrowid
 
 
@@ -267,6 +451,7 @@ def reminder_list_unfired() -> list[dict]:
 def reminder_mark_fired(reminder_id: int):
     with db() as c:
         c.execute("UPDATE reminders SET fired=1 WHERE id=?", (reminder_id,))
+    _mark_backup_dirty()
 
 
 def reminder_recent(limit: int = 20) -> list[dict]:
@@ -284,6 +469,7 @@ def conv_add(role: str, content: str):
             "INSERT INTO conversations(role, content, created_at) VALUES(?,?,?)",
             (role, content, _now_iso()),
         )
+    _mark_backup_dirty()
 
 
 def conv_recent(n: int = 20) -> list[dict]:
@@ -310,6 +496,7 @@ def conv_clear():
     """Xoá toàn bộ lịch sử chat (dùng cho nút Reset đoạn chat)."""
     with db() as c:
         c.execute("DELETE FROM conversations")
+    _mark_backup_dirty()
 
 # ── User profile / Life OS state / App config (single-row tables) ───────────
 def profile_get() -> dict:
@@ -331,7 +518,8 @@ def profile_update(**fields) -> dict:
     vals.append(_now_iso())
     with db() as c:
         c.execute(f"UPDATE user_profile SET {', '.join(sets)} WHERE id=1", vals)
-        return {"ok": True, "updated": [f for f in fields if f in allowed]}
+    _mark_backup_dirty()
+    return {"ok": True, "updated": [f for f in fields if f in allowed]}
 
 
 def life_state_get() -> dict:
@@ -353,14 +541,15 @@ def life_state_update(**fields) -> dict:
     vals.append(_now_iso())
     with db() as c:
         c.execute(f"UPDATE life_os_state SET {', '.join(sets)} WHERE id=1", vals)
-        return {"ok": True, "updated": [f for f in fields if f in allowed]}
+    _mark_backup_dirty()
+    return {"ok": True, "updated": [f for f in fields if f in allowed]}
 
 
 def config_get() -> dict:
     """Lấy last-used config (api_key_hint chỉ dùng nội bộ server-side)."""
     with db() as c:
         r = c.execute("SELECT * FROM app_config WHERE id=1").fetchone()
-        return dict(r) if r else {"base_url": "", "model": "", "api_key_hint": ""}
+        return dict(r) if r else {"base_url": "", "model": "", "api_key_hint": "", "sync_id": ""}
 
 
 def config_set(base_url: str = "", model: str = "", api_key: str = "") -> None:
@@ -377,6 +566,22 @@ def config_set(base_url: str = "", model: str = "", api_key: str = "") -> None:
     sets.append("updated_at=?"); vals.append(_now_iso())
     with db() as c:
         c.execute(f"UPDATE app_config SET {', '.join(sets)} WHERE id=1", vals)
+    _mark_backup_dirty()
+
+
+def _valid_sync_id(sync_id: str) -> bool:
+    import re
+    return bool(re.fullmatch(r"[A-Za-z0-9._-]{4,64}", sync_id or ""))
+
+
+def config_set_sync_id(sync_id: str) -> dict:
+    sync_id = (sync_id or "").strip()
+    if not _valid_sync_id(sync_id):
+        return {"ok": False, "error": "Sync ID phải dài 4-64 ký tự, chỉ gồm chữ/số/._- và không có khoảng trắng"}
+    with db() as c:
+        c.execute("UPDATE app_config SET sync_id=?, updated_at=? WHERE id=1", (sync_id, _now_iso()))
+    _mark_backup_dirty()
+    return {"ok": True, "sync_id": sync_id}
 
 
 # ── Event CRUD ────────────────────────────────────────────────────────────
@@ -390,6 +595,7 @@ def event_create(title: str, start_at: str = "", end_at: str = "", note: str = "
             (title, note or "", start_at or None, end_at or None, location or "",
              1 if all_day else 0, source, schedule_id, _now_iso()),
         )
+        _mark_backup_dirty()
         return {"id": cur.lastrowid, "title": title, "start_at": start_at}
 
 
@@ -426,6 +632,7 @@ def event_update(event_id: int, **fields) -> dict:
         cur = c.execute(f"UPDATE events SET {', '.join(sets)} WHERE id=?", vals)
         if cur.rowcount == 0:
             return {"ok": False, "error": f"không có event id {event_id}"}
+        _mark_backup_dirty()
         return {"ok": True, "id": event_id}
 
 
@@ -447,6 +654,7 @@ def goal_create(title: str, level: str, period: str = "", parent_id=None,
                VALUES(?,?,?,?,?, 'active', '', ?)""",
             (title, description or "", level, period or "", parent_id, _now_iso()),
         )
+        _mark_backup_dirty()
         return {"id": cur.lastrowid, "title": title, "level": level}
 
 
@@ -475,6 +683,7 @@ def goal_update(goal_id: int, **fields) -> dict:
         cur = c.execute(f"UPDATE goals SET {', '.join(sets)} WHERE id=?", vals)
         if cur.rowcount == 0:
             return {"ok": False, "error": f"không có goal id {goal_id}"}
+        _mark_backup_dirty()
         return {"ok": True, "id": goal_id}
 
 
@@ -491,6 +700,7 @@ def journal_add(mood: str = "", content: str = "", tags: str = "") -> int:
             "INSERT INTO long_term_memory(content, confidence, source, created_at, last_used_at) VALUES(?,0.4,'journal',?,?)",
             (content, _now_iso(), _now_iso()),
         )
+        _mark_backup_dirty()
         return jid
 
 
@@ -506,6 +716,7 @@ def lmem_add(content: str, confidence: float = 0.5, source: str = "chat") -> int
             "INSERT INTO long_term_memory(content, confidence, source, created_at, last_used_at) VALUES(?,?,?,?,?)",
             (content, confidence, source, _now_iso(), _now_iso()),
         )
+        _mark_backup_dirty()
         return cur.lastrowid
 
 
@@ -544,6 +755,7 @@ def schedule_create_draft(date: str, slots: list) -> dict:
             "INSERT INTO schedules(date, slots, status, created_at) VALUES(?,?,'draft',?)",
             (date, json.dumps(cleaned, ensure_ascii=False), _now_iso()),
         )
+        _mark_backup_dirty()
         return {"id": cur.lastrowid, "date": date, "slots": cleaned}
 
 
@@ -582,6 +794,7 @@ def schedule_approve(schedule_id: int) -> dict:
                                      source="schedule")
         except Exception as ex:
             print(f"[schedule] slot skip: {slot} -> {ex}")
+    _mark_backup_dirty()
     return {"ok": True, "id": schedule_id, "events": created_events}
 
 
@@ -592,12 +805,14 @@ def report_insert(rtype: str, period: str, content: str, schedule_id=None) -> in
             "INSERT INTO reports(type, period, content, schedule_id, read, pushed, created_at) VALUES(?,?,?,?,0,0,?)",
             (rtype, period, content, schedule_id, _now_iso()),
         )
+        _mark_backup_dirty()
         return cur.lastrowid
 
 
 def report_mark_pushed(rid: int):
     with db() as c:
         c.execute("UPDATE reports SET pushed=1 WHERE id=?", (rid,))
+    _mark_backup_dirty()
 
 
 def report_unread() -> list[dict]:
@@ -617,6 +832,7 @@ def report_unread() -> list[dict]:
 def report_mark_read(rid: int):
     with db() as c:
         c.execute("UPDATE reports SET read=1 WHERE id=?", (rid,))
+    _mark_backup_dirty()
 
 
 # ── System prompt (template, được bơm thông tin + thời gian thực mỗi request) ─
@@ -1131,7 +1347,6 @@ def _tool_search_memory(query) -> str:
 def _tool_get_life_state() -> str:
     s = life_state_get()
     goals = goal_list()
-    import json as _json
     pri = s.get("top_3_priorities") or "[]"
     risks = s.get("current_risks") or "[]"
     g_lines = [f"- [{r['level']}] {r['title']}" for r in goals]
@@ -1150,6 +1365,7 @@ def _tool_update_profile(**kwargs) -> str:
 
 def _tool_generate_schedule(date, slots, focus="") -> str:
     """Lưu bản nháp lịch, trả schedule_id để model bọc vào marker <<<SCHEDULE id=...>>>."""
+    _ = focus
     r = schedule_create_draft(date, slots)
     return f"Đã lưu lịch nháp id={r['id']} cho ngày {date} ({len(r['slots'])} slot). Hãy kèm marker <<<SCHEDULE id=\"{r['id']}\">>> và trình cho user duyệt, KHÔNG tự apply."
 
@@ -1281,6 +1497,31 @@ async def manifest():
 async def ping():
     return {"status": "ok"}
 
+# ── Route: Config / Sync ID ─────────────────────────────────────────────────
+@app.get("/config")
+async def public_config():
+    cfg = config_get()
+    return JSONResponse({
+        "base_url": cfg.get("base_url", ""),
+        "model": cfg.get("model", ""),
+        "sync_id": cfg.get("sync_id", ""),
+    })
+
+
+@app.get("/sync-id")
+async def get_sync_id():
+    return JSONResponse({"sync_id": config_get().get("sync_id", "")})
+
+
+@app.post("/sync-id")
+async def set_sync_id(request: Request):
+    data = await request.json()
+    r = config_set_sync_id(data.get("sync_id", ""))
+    if not r.get("ok"):
+        return JSONResponse(r, status_code=400)
+    return JSONResponse(r)
+
+
 # ── Route: VAPID public key (cho client dùng khi subscribe push) ──────────
 @app.get("/vapid-public-key")
 async def vapid_public_key():
@@ -1290,6 +1531,32 @@ async def vapid_public_key():
             status_code=500,
         )
     return JSONResponse({"publicKey": VAPID_PUBLIC})
+
+# ── Route: Debug backup GitHub ──────────────────────────────────────────────
+@app.get("/debug-backup")
+async def debug_backup(run: bool = False):
+    result = None
+    if run:
+        result = backup_memory_db(force=True)
+    return JSONResponse({
+        "configured": _github_backup_configured(),
+        "owner": GITHUB_BACKUP_OWNER,
+        "repo": GITHUB_BACKUP_REPO,
+        "branch": GITHUB_BACKUP_BRANCH,
+        "path": GITHUB_BACKUP_PATH,
+        "interval_minutes": BACKUP_INTERVAL_MINUTES,
+        "dirty": _backup_dirty,
+        "last_attempt": _backup_last_attempt,
+        "last_success": _backup_last_success,
+        "last_error": _backup_last_error,
+        "run_result": result,
+    })
+
+
+@app.post("/debug-backup-now")
+async def debug_backup_now():
+    return JSONResponse(backup_memory_db(force=True))
+
 
 # ── Route: Debug push (kiểm tra trạng thái VAPID + số thiết bị đã đăng ký) ──
 def _vapid_public_valid(key: str) -> bool:
@@ -1571,12 +1838,67 @@ def extract_reminder(text: str) -> Optional[dict]:
     return None
 
 
+# ── Push subscription storage ───────────────────────────────────────────────
+def _push_sub_endpoint(sub: dict) -> str:
+    return str((sub or {}).get("endpoint") or "").strip()
+
+
+def push_sub_add(sub: dict) -> dict:
+    endpoint = _push_sub_endpoint(sub)
+    if not endpoint:
+        return {"ok": False, "error": "subscription thiếu endpoint"}
+    raw = json.dumps(sub, ensure_ascii=False, sort_keys=True)
+    now = _now_iso()
+    with db() as c:
+        c.execute(
+            """INSERT INTO push_subscriptions(endpoint, subscription_json, created_at, updated_at)
+               VALUES(?,?,?,?)
+               ON CONFLICT(endpoint) DO UPDATE SET subscription_json=excluded.subscription_json, updated_at=excluded.updated_at""",
+            (endpoint, raw, now, now),
+        )
+    global push_subscriptions
+    push_subscriptions = [s for s in push_subscriptions if _push_sub_endpoint(s) != endpoint]
+    push_subscriptions.append(sub)
+    _mark_backup_dirty()
+    return {"ok": True, "endpoint": endpoint}
+
+
+def push_sub_load() -> int:
+    global push_subscriptions
+    loaded = []
+    with db() as c:
+        rows = c.execute("SELECT subscription_json FROM push_subscriptions ORDER BY id").fetchall()
+    for r in rows:
+        try:
+            sub = json.loads(r["subscription_json"] or "{}")
+            if _push_sub_endpoint(sub):
+                loaded.append(sub)
+        except Exception:
+            continue
+    push_subscriptions = loaded
+    if loaded:
+        print(f"[push] loaded {len(loaded)} subscription(s) from DB")
+    return len(loaded)
+
+
+def push_sub_remove(endpoint: str) -> None:
+    endpoint = (endpoint or "").strip()
+    if not endpoint:
+        return
+    with db() as c:
+        c.execute("DELETE FROM push_subscriptions WHERE endpoint=?", (endpoint,))
+    global push_subscriptions
+    push_subscriptions = [s for s in push_subscriptions if _push_sub_endpoint(s) != endpoint]
+    _mark_backup_dirty()
+
+
 # ── Route: Push subscription ──────────────────────────────────────────────
 @app.post("/subscribe")
 async def subscribe(request: Request):
     sub = await request.json()
-    if sub not in push_subscriptions:
-        push_subscriptions.append(sub)
+    r = push_sub_add(sub)
+    if not r.get("ok"):
+        return JSONResponse(r, status_code=400)
     return JSONResponse({"status": "ok"})
 
 
@@ -1618,7 +1940,7 @@ def send_push(title: str, body: str) -> dict:
             summary["failed"].append({"endpoint": endpoint, "error": f"{type(e).__name__}: {e}"})
 
     for d in dead:
-        push_subscriptions.remove(d)
+        push_sub_remove(_push_sub_endpoint(d))
     return summary
 
 
@@ -1911,7 +2233,6 @@ async def debug_state():
 
 
 # ── DB viewer (xem trực tiếp memory.db trên trình duyệt) ──────────────────
-_SENSITIVE_COLS = {"api_key_hint"}
 
 
 def _mask_row(table: str, row: dict) -> dict:
@@ -1986,11 +2307,15 @@ async def db_viewer():
 # ── Startup ───────────────────────────────────────────────────────────────
 @app.on_event("startup")
 async def startup():
+    _restore_db_from_github_if_needed()
     db_init()
-    scheduler.start()
+    push_sub_load()
     _reschedule_reminders()
     _register_cron_jobs()
+    _register_backup_job()
+    scheduler.start()
 
 @app.on_event("shutdown")
 async def shutdown():
+    backup_memory_db(force=False)
     scheduler.shutdown()

@@ -463,6 +463,21 @@
   }
   #settings-save:hover { background: var(--accent2); }
 
+  .setting-row { display: flex; gap: 8px; }
+  .setting-row input { flex: 1; }
+  .setting-mini-btn {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 12px;
+    padding: 0 10px;
+    cursor: pointer;
+  }
+  .setting-mini-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .setting-hint { font-size: 11px; color: var(--muted); line-height: 1.5; }
+
   #settings-cancel {
     background: none;
     border: 1px solid var(--border);
@@ -1021,6 +1036,7 @@ function loadSettings() {
     baseUrl: localStorage.getItem('cfg_baseurl') || '',
     apiKey:  localStorage.getItem('cfg_apikey')  || '',
     model:   localStorage.getItem('cfg_model')   || '',
+    syncId:  localStorage.getItem('cfg_syncid')  || '',
   };
 }
 
@@ -1034,6 +1050,7 @@ function openSettings() {
   document.getElementById('cfg-baseurl').value = c.baseUrl;
   document.getElementById('cfg-apikey').value  = c.apiKey;
   document.getElementById('cfg-model').value   = c.model;
+  document.getElementById('cfg-syncid').value  = c.syncId;
   document.getElementById('settings-overlay').classList.add('open');
 }
 
@@ -1045,25 +1062,100 @@ function overlayClick(e) {
   if (e.target === document.getElementById('settings-overlay')) closeSettings();
 }
 
-function saveSettings() {
+async function saveSettings() {
   const baseUrl = document.getElementById('cfg-baseurl').value.trim();
   const apiKey  = document.getElementById('cfg-apikey').value.trim();
   const model   = document.getElementById('cfg-model').value.trim();
+  const syncId  = document.getElementById('cfg-syncid').value.trim();
 
   if (!apiKey) { showToast('Vui lòng nhập API Key'); return; }
 
   localStorage.setItem('cfg_baseurl', baseUrl);
   localStorage.setItem('cfg_apikey',  apiKey);
   localStorage.setItem('cfg_model',   model);
+  localStorage.setItem('cfg_syncid',  syncId);
+
+  if (syncId) {
+    const ok = await saveSyncIdToServer(syncId);
+    if (!ok) return;
+  }
 
   document.getElementById('settings-btn').classList.add('configured');
   showToast('Đã lưu cài đặt ✓');
   closeSettings();
 }
 
-function checkConfigOnStart() {
+function generateSyncId() {
+  let id = '';
+  if (window.crypto && crypto.randomUUID) {
+    id = 'kim-' + crypto.randomUUID().slice(0, 8);
+  } else {
+    id = 'kim-' + Math.random().toString(36).slice(2, 10);
+  }
+  document.getElementById('cfg-syncid').value = id;
+  showToast('Đã tạo Sync ID, nhớ lưu lại nhé');
+}
+
+async function saveSyncIdToServer(syncId) {
+  try {
+    const res = await fetch('/sync-id', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sync_id: syncId })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(data.error || 'Sync ID không hợp lệ');
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.log('save sync id error:', e);
+    showToast('Không lưu được Sync ID lên server');
+    return false;
+  }
+}
+
+async function loadServerConfig(show = true) {
+  try {
+    const res = await fetch('/config');
+    if (!res.ok) throw new Error('server trả ' + res.status);
+    const data = await res.json();
+    if (data.base_url) {
+      localStorage.setItem('cfg_baseurl', data.base_url);
+      const el = document.getElementById('cfg-baseurl'); if (el) el.value = data.base_url;
+    }
+    if (data.model) {
+      localStorage.setItem('cfg_model', data.model);
+      const el = document.getElementById('cfg-model'); if (el) el.value = data.model;
+    }
+    if (data.sync_id) {
+      localStorage.setItem('cfg_syncid', data.sync_id);
+      const el = document.getElementById('cfg-syncid'); if (el) el.value = data.sync_id;
+    }
+    if (show) showToast('Đã tải config từ server. API Key cần nhập trên thiết bị này.');
+  } catch (e) {
+    console.log('loadServerConfig error:', e);
+    if (show) showToast('Không tải được config server');
+  }
+}
+
+async function copySyncId() {
+  const id = document.getElementById('cfg-syncid').value.trim();
+  if (!id) { showToast('Chưa có Sync ID'); return; }
+  try {
+    await navigator.clipboard.writeText(id);
+    showToast('Đã copy Sync ID ✓');
+  } catch (e) {
+    showToast('Sync ID: ' + id);
+  }
+}
+
+async function checkConfigOnStart() {
   if (isConfigured()) {
     document.getElementById('settings-btn').classList.add('configured');
+  } else {
+    await loadServerConfig(false);
   }
 }
 checkConfigOnStart();
@@ -1168,7 +1260,17 @@ setInterval(() => {
       <label>MODEL</label>
       <input id="cfg-model" type="text" placeholder="gpt-4o">
     </div>
+    <div class="setting-group">
+      <label>SYNC ID</label>
+      <div class="setting-row">
+        <input id="cfg-syncid" type="text" placeholder="kim-abc123">
+        <button class="setting-mini-btn" onclick="generateSyncId()" type="button">Tạo</button>
+        <button class="setting-mini-btn" onclick="copySyncId()" type="button">Copy</button>
+      </div>
+      <small class="setting-hint">Dùng cùng Sync ID trên thiết bị khác để dùng chung dữ liệu server. API Key không được tải về tự động.</small>
+    </div>
     <button id="settings-save" onclick="saveSettings()">Lưu</button>
+    <button class="setting-mini-btn" onclick="loadServerConfig(true)" type="button">Tải config từ server</button>
     <button id="settings-cancel" onclick="closeSettings()">Huỷ</button>
 
     <div class="setting-divider"></div>
