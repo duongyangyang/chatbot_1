@@ -1380,6 +1380,11 @@ async def memory_search_endpoint(request: Request):
     results = memory_search(query)
     return JSONResponse({"items": results})
 
+@app.get("/memories")
+async def memories_endpoint(limit: int = 50):
+    limit = max(1, min(int(limit), 200))
+    return JSONResponse({"items": memory_list(limit)})
+
 
 # ── Pending API (jobs chưa đọc) ───────────────────────────────────────────
 @app.get("/pending")

@@ -1,4 +1,4 @@
-const CACHE = 'assistant-v6';
+const CACHE = 'assistant-v7';
 const ASSETS = ['/', '/index.html', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -32,7 +32,7 @@ self.addEventListener('push', e => {
   const data = e.data?.json() || {};
   const title = data.title || 'Trợ lý AI';
   const body  = data.body  || 'Bạn có tin nhắn mới';
-  const icon  = data.icon  || '/icon-192.png';
+  const icon  = data.icon  || '/static/icon-192.png';
 
   e.waitUntil(
     self.registration.showNotification(title, {

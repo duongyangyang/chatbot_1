@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0f0f0f">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Thư ký Kim">
 <title>Thư ký Kim</title>
 <link rel="manifest" href="/manifest.json">
@@ -30,6 +30,7 @@
 
   html {
     height: -webkit-fill-available;
+    background: var(--bg);
   }
   body {
     min-height: 100vh;
@@ -59,60 +60,8 @@
     height: 100dvh;
     max-width: 680px;
     margin: 0 auto;
-  }
-
-  /* Header */
-  header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 14px 16px;
-    padding-top: max(14px, env(safe-area-inset-top));
-    border-bottom: 1px solid var(--border);
     background: var(--bg);
-    position: relative;
-    z-index: 10;
-    flex-shrink: 0;
   }
-
-  .avatar {
-    width: 36px; height: 36px;
-    border-radius: 50%;
-    background: var(--accent2);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 16px;
-    flex-shrink: 0;
-    overflow: hidden;
-  }
-
-  .avatar img {
-    width: 100%; height: 100%;
-    object-fit: cover;
-  }
-
-  .header-info { flex: 1; }
-  .header-name { font-weight: 500; font-size: 15px; }
-  .header-status { font-size: 12px; color: var(--muted); }
-  .status-dot {
-    display: inline-block;
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    background: #22c55e;
-    margin-right: 4px;
-    vertical-align: middle;
-  }
-
-  #notif-btn {
-    background: none; border: 1px solid var(--border);
-    color: var(--muted); border-radius: 8px;
-    padding: 6px 10px; font-size: 12px;
-    cursor: pointer; transition: all .2s;
-    font-family: var(--font);
-    -webkit-user-select: none;
-    user-select: none;
-  }
-  #notif-btn:hover { border-color: var(--accent); color: var(--accent); }
-  #notif-btn.enabled { border-color: #22c55e; color: #22c55e; }
 
   /* Messages */
   #messages {
@@ -120,6 +69,7 @@
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     padding: 16px;
+    padding-top: max(14px, calc(env(safe-area-inset-top) + 54px));
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -605,10 +555,15 @@
     text-decoration: none;
   }
   .settings-action-icon {
-    font-size: 18px;
     flex-shrink: 0;
-    width: 32px;
-    text-align: center;
+    width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--muted);
+  }
+  .settings-action-icon svg, .icon-btn svg {
+    width: 20px; height: 20px;
+    stroke: currentColor; fill: none;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
   }
   .settings-action-content { display: flex; flex-direction: column; gap: 2px; }
   .settings-action-title { font-size: 14px; font-weight: 500; }
@@ -619,36 +574,50 @@
   .settings-action-row.danger:hover .settings-action-icon { filter: saturate(2); }
   #settings-reset-chat:disabled { opacity: .4; cursor: not-allowed; }
 
-  /* Settings icon button in header */
-  #settings-btn {
-    background: none;
+  .icon-btn {
+    display: flex; align-items: center; justify-content: center;
     border: 1px solid var(--border);
     color: var(--muted);
-    border-radius: 8px;
-    padding: 6px 10px;
-    font-size: 18px;
+    background: rgba(26,26,26,.86);
+    border-radius: 999px;
     cursor: pointer;
-    line-height: 1;
-    -webkit-user-select: none;
-    user-select: none;
-    transition: border-color .2s, color .2s;
+    -webkit-user-select: none; user-select: none;
+    transition: border-color .2s, color .2s, background .2s, transform .1s;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
   }
-  #settings-btn:hover { border-color: var(--accent); color: var(--accent); }
-  #settings-btn.configured { border-color: #22c55e; color: #22c55e; }
+  .icon-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(79,142,247,.12); }
+  .icon-btn:active { transform: scale(.96); }
+  .icon-btn.configured { border-color: #22c55e; color: #22c55e; }
+  #floating-settings-btn {
+    position: fixed;
+    top: max(12px, calc(env(safe-area-inset-top) + 8px));
+    right: max(12px, calc(env(safe-area-inset-right) + 8px));
+    z-index: 100;
+    width: 42px; height: 42px;
+  }
+  #settings-notification-toggle.enabled { border-color: #22c55e; }
+  #settings-notification-toggle.enabled .settings-action-icon,
+  #settings-notification-toggle.enabled .settings-action-title { color: #22c55e; }
+  .settings-data-view {
+    display: none; flex-direction: column; gap: 8px;
+    max-height: 260px; overflow: auto;
+    background: #111; border: 1px solid var(--border);
+    border-radius: 12px; padding: 10px;
+  }
+  .settings-data-view.open { display: flex; }
+  .settings-data-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; }
+  .settings-data-close { background: transparent; border: 0; color: var(--muted); font-size: 18px; cursor: pointer; }
+  .settings-data-item { border: 1px solid var(--border); border-radius: 10px; padding: 9px 10px; background: var(--surface); font-size: 12px; color: var(--text); }
+  .settings-data-meta { color: var(--muted); font-size: 10px; margin-bottom: 3px; }
 
 </style>
 </head>
 <body>
 <div id="app">
-  <header>
-    <div class="avatar"><img src="/static/icon.jpg" alt="Thư ký Kim"></div>
-    <div class="header-info">
-      <div class="header-name">Thư ký Kim</div>
-      <div class="header-status"><span class="status-dot"></span>Đang hoạt động</div>
-    </div>
-    <button id="settings-btn" onclick="openSettings()" title="Cài đặt">⚙️</button>
-    <button id="notif-btn" onclick="toggleNotification()">🔔</button>
-  </header>
+  <button id="floating-settings-btn" class="icon-btn" onclick="openSettings()" title="Cài đặt" aria-label="Cài đặt">
+    <svg viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.36a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.64 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15 4.64a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.14.32.36.59.64.77.28.18.6.27.96.27H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15Z"/></svg>
+  </button>
 
   <div id="messages">
     <div id="empty">
@@ -683,6 +652,16 @@ const API_URL = '/chat';
 let isTyping = false;
 let swRegistration = null;
 let hasMessages = false;
+
+const ICONS = {
+  bell: '<svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
+  bellOff: '<svg viewBox="0 0 24 24"><path d="M13.73 21a2 2 0 0 1-3.46 0"/><path d="M18.63 13A17.9 17.9 0 0 1 18 8"/><path d="M6.26 6.26A5.98 5.98 0 0 0 6 8c0 7-3 7-3 9h14"/><path d="m2 2 20 20"/><path d="M8.56 3.58A6 6 0 0 1 18 8"/></svg>',
+  history: '<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6"/><path d="M12 7v5l3 2"/></svg>',
+  tasks: '<svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+  memory: '<svg viewBox="0 0 24 24"><path d="M12 3a4 4 0 0 0-4 4v1H7a4 4 0 0 0 0 8h1v1a4 4 0 0 0 8 0v-1h1a4 4 0 0 0 0-8h-1V7a4 4 0 0 0-4-4Z"/><path d="M8 8h8M8 16h8M12 3v18"/></svg>',
+  trash: '<svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/></svg>',
+  database: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg>'
+};
 
 // Prevent default zoom on input focus
 document.addEventListener('touchstart', function(e) {
@@ -1014,8 +993,6 @@ function isStandalone() {
 }
 
 async function toggleNotification() {
-  const btn = document.getElementById('notif-btn');
-
   if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
     showToast('Trình duyệt không hỗ trợ thông báo');
     return;
@@ -1046,9 +1023,16 @@ async function toggleNotification() {
 }
 
 function setNotifBtn(on) {
-  const btn = document.getElementById('notif-btn');
-  if (on) { btn.className = 'enabled'; btn.textContent = '🔔 ON'; }
-  else    { btn.className = '';          btn.textContent = '🔔 OFF'; }
+  const btn = document.getElementById('settings-notification-toggle');
+  const icon = document.getElementById('settings-notification-icon');
+  const desc = document.getElementById('settings-notification-desc');
+  if (btn) btn.classList.toggle('enabled', !!on);
+  if (icon) icon.innerHTML = on ? ICONS.bell : ICONS.bellOff;
+  if (desc) desc.textContent = on ? 'Đã bật thông báo' : 'Chưa bật thông báo';
+}
+
+function refreshNotificationUi() {
+  setNotifBtn('Notification' in window && Notification.permission === 'granted');
 }
 
 async function subscribeToNotifications() {
@@ -1147,9 +1131,11 @@ function openSettings() {
   document.getElementById('cfg-apikey').value  = c.apiKey;
   document.getElementById('cfg-model').value   = c.model;
   document.getElementById('settings-overlay').classList.add('open');
+  refreshNotificationUi();
 }
 
 function closeSettings() {
+  closeSettingsData();
   document.getElementById('settings-overlay').classList.remove('open');
 }
 
@@ -1168,7 +1154,7 @@ async function saveSettings() {
   localStorage.setItem('cfg_apikey',  apiKey);
   localStorage.setItem('cfg_model',   model);
 
-  document.getElementById('settings-btn').classList.add('configured');
+  document.getElementById('floating-settings-btn')?.classList.add('configured');
   showToast('Đã lưu cài đặt ✓');
   closeSettings();
 }
@@ -1195,10 +1181,63 @@ async function loadServerConfig(show = true) {
 
 async function checkConfigOnStart() {
   if (isConfigured()) {
-    document.getElementById('settings-btn').classList.add('configured');
+    document.getElementById('floating-settings-btn')?.classList.add('configured');
   }
 }
 checkConfigOnStart();
+
+function closeSettingsData() {
+  const box = document.getElementById('settings-data-view');
+  if (!box) return;
+  box.classList.remove('open');
+  box.innerHTML = '';
+}
+
+function renderSettingsData(kind, items) {
+  const box = document.getElementById('settings-data-view');
+  if (!box) return;
+  const title = kind === 'history' ? 'Lịch sử chat' : kind === 'tasks' ? 'Tasks' : 'Memories';
+  let html = `<div class="settings-data-head"><span>${title} (${items.length})</span><button class="settings-data-close" onclick="closeSettingsData()" type="button" aria-label="Đóng">×</button></div>`;
+  if (!items.length) {
+    html += '<div class="settings-data-item">Chưa có dữ liệu.</div>';
+  } else if (kind === 'history') {
+    html += items.map(it => {
+      const role = it.role === 'assistant' ? 'Kim' : 'Bạn';
+      return `<div class="settings-data-item"><div class="settings-data-meta">${escapeHtml(role)} · ${escapeHtml(it.created_at || '')}</div>${escapeHtml(it.content || '')}</div>`;
+    }).join('');
+  } else if (kind === 'tasks') {
+    html += items.map(it => {
+      const due = it.due_at ? ` · hạn ${it.due_at}` : '';
+      return `<div class="settings-data-item"><div class="settings-data-meta">${escapeHtml(it.status || '')}${escapeHtml(due)}</div>${escapeHtml(it.title || '')}</div>`;
+    }).join('');
+  } else {
+    html += items.map(it => {
+      const meta = [it.type, it.importance ? `ưu tiên ${it.importance}` : '', it.created_at || ''].filter(Boolean).join(' · ');
+      return `<div class="settings-data-item"><div class="settings-data-meta">${escapeHtml(meta)}</div>${escapeHtml(it.content || '')}</div>`;
+    }).join('');
+  }
+  box.innerHTML = html;
+  box.classList.add('open');
+}
+
+async function showSettingsData(kind) {
+  const box = document.getElementById('settings-data-view');
+  if (box) {
+    box.innerHTML = '<div class="settings-data-item">Đang tải...</div>';
+    box.classList.add('open');
+  }
+  const url = kind === 'history' ? '/history' : kind === 'tasks' ? '/tasks?status=all' : '/memories?limit=50';
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ('server trả ' + res.status));
+    renderSettingsData(kind, data.items || []);
+  } catch (e) {
+    console.log('showSettingsData error:', e);
+    if (box) box.innerHTML = `<div class="settings-data-head"><span>Lỗi</span><button class="settings-data-close" onclick="closeSettingsData()" type="button" aria-label="Đóng">×</button></div><div class="settings-data-item">Không tải được dữ liệu.</div>`;
+    showToast('Không tải được dữ liệu');
+  }
+}
 
 // Reset đoạn chat: xoá lịch sử trên server + xoá tin nhắn trên màn hình.
 async function resetChat() {
@@ -1320,16 +1359,42 @@ setInterval(() => {
     <div class="settings-section">
       <div class="settings-section-label">Dữ liệu</div>
 
-      <button id="settings-view-db" class="settings-action-row" onclick="window.open('/db','_blank')" type="button">
-        <span class="settings-action-icon">🗄️</span>
+      <button id="settings-chat-history" class="settings-action-row" onclick="showSettingsData('history')" type="button">
+        <span class="settings-action-icon"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6"/><path d="M12 7v5l3 2"/></svg></span>
         <div class="settings-action-content">
-          <div class="settings-action-title">Xem database</div>
-          <div class="settings-action-desc">Xem toàn bộ bảng: task, goal, event, journal, nhắc nhở…</div>
+          <div class="settings-action-title">Lịch sử chat</div>
+          <div class="settings-action-desc">Xem các tin nhắn đã lưu trên server</div>
         </div>
       </button>
 
+      <button id="settings-task-history" class="settings-action-row" onclick="showSettingsData('tasks')" type="button">
+        <span class="settings-action-icon"><svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
+        <div class="settings-action-content">
+          <div class="settings-action-title">Tasks</div>
+          <div class="settings-action-desc">Xem tất cả nhiệm vụ đang mở và đã xong</div>
+        </div>
+      </button>
+
+      <button id="settings-memories" class="settings-action-row" onclick="showSettingsData('memories')" type="button">
+        <span class="settings-action-icon"><svg viewBox="0 0 24 24"><path d="M12 3a4 4 0 0 0-4 4v1H7a4 4 0 0 0 0 8h1v1a4 4 0 0 0 8 0v-1h1a4 4 0 0 0 0-8h-1V7a4 4 0 0 0-4-4Z"/><path d="M8 8h8M8 16h8M12 3v18"/></svg></span>
+        <div class="settings-action-content">
+          <div class="settings-action-title">Memories</div>
+          <div class="settings-action-desc">Xem bộ nhớ dài hạn của Thư ký Kim</div>
+        </div>
+      </button>
+
+      <button id="settings-notification-toggle" class="settings-action-row" onclick="toggleNotification()" type="button">
+        <span id="settings-notification-icon" class="settings-action-icon"><svg viewBox="0 0 24 24"><path d="M13.73 21a2 2 0 0 1-3.46 0"/><path d="M18.63 13A17.9 17.9 0 0 1 18 8"/><path d="M6.26 6.26A5.98 5.98 0 0 0 6 8c0 7-3 7-3 9h14"/><path d="m2 2 20 20"/><path d="M8.56 3.58A6 6 0 0 1 18 8"/></svg></span>
+        <div class="settings-action-content">
+          <div class="settings-action-title">Thông báo</div>
+          <div id="settings-notification-desc" class="settings-action-desc">Chưa bật thông báo</div>
+        </div>
+      </button>
+
+      <div id="settings-data-view" class="settings-data-view" aria-live="polite"></div>
+
       <button id="settings-reset-chat" class="settings-action-row danger" onclick="resetChat()" type="button">
-        <span class="settings-action-icon">🗑️</span>
+        <span class="settings-action-icon"><svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/></svg></span>
         <div class="settings-action-content">
           <div class="settings-action-title">Xoá toàn bộ đoạn chat</div>
           <div class="settings-action-desc">Xoá lịch sử trên server — không thể hoàn tác</div>
