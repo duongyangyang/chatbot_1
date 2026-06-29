@@ -90,13 +90,6 @@ _DEFAULT_PROFILE = {
 }
 
 
-def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
-    """SQLite migration nhỏ: thêm column nếu DB cũ chưa có."""
-    cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
-    if column not in cols:
-        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
-
-
 def db_init():
     """Tạo tất cả bảng nếu chưa có + seed các single-row table. Gọi trên startup."""
     with db() as c:
@@ -202,7 +195,6 @@ def db_init():
               base_url TEXT DEFAULT '',
               model TEXT DEFAULT '',
               api_key_hint TEXT DEFAULT '',   -- API key thật, chỉ dùng server-side, KHÔNG trả ra GET endpoint
-              sync_id TEXT DEFAULT '',
               updated_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS push_subscriptions(
@@ -214,15 +206,13 @@ def db_init():
             );
             """
         )
-        # DB cũ có thể đã có app_config trước khi thêm sync_id.
-        _ensure_column(c, "app_config", "sync_id", "TEXT DEFAULT ''")
         # Seed single-row tables (chỉ khi chưa có row id=1).
         c.execute("INSERT OR IGNORE INTO user_profile(id, ten, nghe, so_thich, khu_vuc, ghi_chu, updated_at) VALUES(1,?,?,?,?,?,?)",
                   (_DEFAULT_PROFILE["ten"], _DEFAULT_PROFILE["nghe"], _DEFAULT_PROFILE["so_thich"],
                    _DEFAULT_PROFILE["khu_vuc"], _DEFAULT_PROFILE["ghi_chu"], _now_iso()))
         c.execute("INSERT OR IGNORE INTO life_os_state(id, current_life_phase, top_3_priorities, current_risks, updated_at) VALUES(1,'','','',?)",
                   (_now_iso(),))
-        c.execute("INSERT OR IGNORE INTO app_config(id, base_url, model, api_key_hint, sync_id, updated_at) VALUES(1,'','','','',?)",
+        c.execute("INSERT OR IGNORE INTO app_config(id, base_url, model, api_key_hint, updated_at) VALUES(1,'','','',?)",
                   (_now_iso(),))
 
 
@@ -549,7 +539,7 @@ def config_get() -> dict:
     """Lấy last-used config (api_key_hint chỉ dùng nội bộ server-side)."""
     with db() as c:
         r = c.execute("SELECT * FROM app_config WHERE id=1").fetchone()
-        return dict(r) if r else {"base_url": "", "model": "", "api_key_hint": "", "sync_id": ""}
+        return dict(r) if r else {"base_url": "", "model": "", "api_key_hint": ""}
 
 
 def config_set(base_url: str = "", model: str = "", api_key: str = "") -> None:
@@ -567,21 +557,6 @@ def config_set(base_url: str = "", model: str = "", api_key: str = "") -> None:
     with db() as c:
         c.execute(f"UPDATE app_config SET {', '.join(sets)} WHERE id=1", vals)
     _mark_backup_dirty()
-
-
-def _valid_sync_id(sync_id: str) -> bool:
-    import re
-    return bool(re.fullmatch(r"[A-Za-z0-9._-]{4,64}", sync_id or ""))
-
-
-def config_set_sync_id(sync_id: str) -> dict:
-    sync_id = (sync_id or "").strip()
-    if not _valid_sync_id(sync_id):
-        return {"ok": False, "error": "Sync ID phải dài 4-64 ký tự, chỉ gồm chữ/số/._- và không có khoảng trắng"}
-    with db() as c:
-        c.execute("UPDATE app_config SET sync_id=?, updated_at=? WHERE id=1", (sync_id, _now_iso()))
-    _mark_backup_dirty()
-    return {"ok": True, "sync_id": sync_id}
 
 
 # ── Event CRUD ────────────────────────────────────────────────────────────
@@ -1497,29 +1472,14 @@ async def manifest():
 async def ping():
     return {"status": "ok"}
 
-# ── Route: Config / Sync ID ─────────────────────────────────────────────────
+# ── Route: Config public (không trả API key) ───────────────────────────────
 @app.get("/config")
 async def public_config():
     cfg = config_get()
     return JSONResponse({
         "base_url": cfg.get("base_url", ""),
         "model": cfg.get("model", ""),
-        "sync_id": cfg.get("sync_id", ""),
     })
-
-
-@app.get("/sync-id")
-async def get_sync_id():
-    return JSONResponse({"sync_id": config_get().get("sync_id", "")})
-
-
-@app.post("/sync-id")
-async def set_sync_id(request: Request):
-    data = await request.json()
-    r = config_set_sync_id(data.get("sync_id", ""))
-    if not r.get("ok"):
-        return JSONResponse(r, status_code=400)
-    return JSONResponse(r)
 
 
 # ── Route: VAPID public key (cho client dùng khi subscribe push) ──────────

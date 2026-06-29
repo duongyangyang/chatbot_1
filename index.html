@@ -408,7 +408,9 @@
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,.7);
+    background: rgba(0,0,0,.6);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
     z-index: 200;
     align-items: flex-end;
     justify-content: center;
@@ -416,27 +418,95 @@
   #settings-overlay.open { display: flex; }
 
   #settings-panel {
-    background: var(--surface);
+    background: #141414;
     border: 1px solid var(--border);
+    border-bottom: none;
     border-radius: 20px 20px 0 0;
-    padding: 24px 20px max(24px, env(safe-area-inset-bottom));
     width: 100%;
     max-width: 680px;
+    max-height: 90dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+  }
+  #settings-panel::-webkit-scrollbar { width: 4px; }
+  #settings-panel::-webkit-scrollbar-track { background: transparent; }
+  #settings-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* Drag handle */
+  .settings-handle {
+    width: 36px; height: 4px;
+    background: #333;
+    border-radius: 2px;
+    margin: 12px auto 0;
+    flex-shrink: 0;
   }
 
-  #settings-panel h3 {
+  /* Settings header */
+  .settings-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px 12px;
+    flex-shrink: 0;
+  }
+  .settings-title {
     font-size: 16px;
-    font-weight: 500;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .settings-close-btn {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: #222;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: all .2s;
+    line-height: 1;
+    -webkit-user-select: none; user-select: none;
+  }
+  .settings-close-btn:hover { background: #2a2a2a; color: var(--text); }
+
+  /* Settings sections */
+  .settings-section {
+    padding: 0 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .settings-section-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 0 4px;
     margin-bottom: 2px;
   }
 
+  .settings-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 16px;
+    flex-shrink: 0;
+  }
+
+  /* Form groups */
   .setting-group { display: flex; flex-direction: column; gap: 6px; }
-  .setting-group label { font-size: 12px; color: var(--muted); }
+  .setting-group label {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 0 2px;
+  }
   .setting-group input {
-    background: var(--bg);
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 10px;
     padding: 10px 14px;
@@ -445,9 +515,22 @@
     font-size: 14px;
     outline: none;
     transition: border-color .2s;
+    width: 100%;
   }
   .setting-group input:focus { border-color: var(--accent); }
+  .setting-group input::placeholder { color: #444; }
 
+  .setting-row { display: flex; gap: 8px; align-items: stretch; }
+  .setting-row input { flex: 1; }
+
+  .setting-hint {
+    font-size: 11px;
+    color: #555;
+    line-height: 1.5;
+    padding: 0 2px;
+  }
+
+  /* Primary action */
   #settings-save {
     background: var(--accent);
     border: none;
@@ -455,73 +538,86 @@
     color: #fff;
     font-family: var(--font);
     font-size: 15px;
-    font-weight: 500;
-    padding: 12px;
+    font-weight: 600;
+    padding: 13px;
     cursor: pointer;
-    transition: background .2s;
-    margin-top: 4px;
+    transition: background .2s, transform .1s;
+    width: 100%;
   }
   #settings-save:hover { background: var(--accent2); }
+  #settings-save:active { transform: scale(.98); }
 
-  .setting-row { display: flex; gap: 8px; }
-  .setting-row input { flex: 1; }
-  .setting-mini-btn {
-    background: var(--bg);
+  /* Settings footer (save + cancel inline) */
+  .settings-footer {
+    display: flex;
+    gap: 10px;
+    padding: 12px 16px max(16px, env(safe-area-inset-bottom));
+    border-top: 1px solid var(--border);
+    background: #141414;
+    flex-shrink: 0;
+  }
+  .settings-footer #settings-save { flex: 1; padding: 11px; font-size: 14px; border-radius: 10px; }
+  #settings-cancel {
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 10px;
-    color: var(--text);
-    font-family: var(--font);
-    font-size: 12px;
-    padding: 0 10px;
-    cursor: pointer;
-  }
-  .setting-mini-btn:hover { border-color: var(--accent); color: var(--accent); }
-  .setting-hint { font-size: 11px; color: var(--muted); line-height: 1.5; }
-
-  #settings-cancel {
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 12px;
     color: var(--muted);
     font-family: var(--font);
     font-size: 14px;
-    padding: 10px;
-    cursor: pointer;
-  }
-
-  .setting-divider {
-    height: 1px;
-    background: var(--border);
-    margin: 4px 0;
-  }
-  #settings-reset-chat {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    color: var(--text);
-    font-family: var(--font);
-    font-size: 14px;
-    padding: 11px;
+    padding: 11px 18px;
     cursor: pointer;
     transition: border-color .2s, color .2s;
+    white-space: nowrap;
   }
-  #settings-reset-chat:hover { border-color: #ef4444; color: #ef4444; }
-  #settings-reset-chat:disabled { opacity: .5; cursor: not-allowed; }
-  #reset-chat-hint { font-size: 11px; color: var(--muted); line-height: 1.5; display: block; margin-top: 2px; }
+  #settings-cancel:hover { border-color: #555; color: var(--text); }
 
-  #settings-view-db {
-    background: var(--bg);
+  /* Mini buttons (Tạo, Copy, Tải config) */
+  .setting-mini-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--muted);
+    font-family: var(--font);
+    font-size: 12px;
+    padding: 0 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color .2s, color .2s;
+    flex-shrink: 0;
+  }
+  .setting-mini-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Action rows (Danger, Info actions) */
+  .settings-action-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 12px;
-    color: var(--text);
-    font-family: var(--font);
-    font-size: 14px;
-    padding: 11px;
+    padding: 12px 14px;
     cursor: pointer;
-    transition: border-color .2s, color .2s;
+    transition: border-color .2s;
+    text-align: left;
+    width: 100%;
+    font-family: var(--font);
+    color: var(--text);
+    text-decoration: none;
   }
-  #settings-view-db:hover { border-color: var(--accent); color: var(--accent); }
-  #view-db-hint { font-size: 11px; color: var(--muted); line-height: 1.5; display: block; margin-top: 2px; }
+  .settings-action-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+    width: 32px;
+    text-align: center;
+  }
+  .settings-action-content { display: flex; flex-direction: column; gap: 2px; }
+  .settings-action-title { font-size: 14px; font-weight: 500; }
+  .settings-action-desc { font-size: 11px; color: var(--muted); }
+  .settings-action-row:hover { border-color: #555; }
+  .settings-action-row.danger:hover { border-color: #ef4444; }
+  .settings-action-row.danger:hover .settings-action-title { color: #ef4444; }
+  .settings-action-row.danger:hover .settings-action-icon { filter: saturate(2); }
+  #settings-reset-chat:disabled { opacity: .4; cursor: not-allowed; }
 
   /* Settings icon button in header */
   #settings-btn {
@@ -535,6 +631,7 @@
     line-height: 1;
     -webkit-user-select: none;
     user-select: none;
+    transition: border-color .2s, color .2s;
   }
   #settings-btn:hover { border-color: var(--accent); color: var(--accent); }
   #settings-btn.configured { border-color: #22c55e; color: #22c55e; }
@@ -1036,7 +1133,6 @@ function loadSettings() {
     baseUrl: localStorage.getItem('cfg_baseurl') || '',
     apiKey:  localStorage.getItem('cfg_apikey')  || '',
     model:   localStorage.getItem('cfg_model')   || '',
-    syncId:  localStorage.getItem('cfg_syncid')  || '',
   };
 }
 
@@ -1050,7 +1146,6 @@ function openSettings() {
   document.getElementById('cfg-baseurl').value = c.baseUrl;
   document.getElementById('cfg-apikey').value  = c.apiKey;
   document.getElementById('cfg-model').value   = c.model;
-  document.getElementById('cfg-syncid').value  = c.syncId;
   document.getElementById('settings-overlay').classList.add('open');
 }
 
@@ -1066,54 +1161,16 @@ async function saveSettings() {
   const baseUrl = document.getElementById('cfg-baseurl').value.trim();
   const apiKey  = document.getElementById('cfg-apikey').value.trim();
   const model   = document.getElementById('cfg-model').value.trim();
-  const syncId  = document.getElementById('cfg-syncid').value.trim();
 
   if (!apiKey) { showToast('Vui lòng nhập API Key'); return; }
 
   localStorage.setItem('cfg_baseurl', baseUrl);
   localStorage.setItem('cfg_apikey',  apiKey);
   localStorage.setItem('cfg_model',   model);
-  localStorage.setItem('cfg_syncid',  syncId);
-
-  if (syncId) {
-    const ok = await saveSyncIdToServer(syncId);
-    if (!ok) return;
-  }
 
   document.getElementById('settings-btn').classList.add('configured');
   showToast('Đã lưu cài đặt ✓');
   closeSettings();
-}
-
-function generateSyncId() {
-  let id = '';
-  if (window.crypto && crypto.randomUUID) {
-    id = 'kim-' + crypto.randomUUID().slice(0, 8);
-  } else {
-    id = 'kim-' + Math.random().toString(36).slice(2, 10);
-  }
-  document.getElementById('cfg-syncid').value = id;
-  showToast('Đã tạo Sync ID, nhớ lưu lại nhé');
-}
-
-async function saveSyncIdToServer(syncId) {
-  try {
-    const res = await fetch('/sync-id', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sync_id: syncId })
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      showToast(data.error || 'Sync ID không hợp lệ');
-      return false;
-    }
-    return true;
-  } catch (e) {
-    console.log('save sync id error:', e);
-    showToast('Không lưu được Sync ID lên server');
-    return false;
-  }
 }
 
 async function loadServerConfig(show = true) {
@@ -1129,10 +1186,6 @@ async function loadServerConfig(show = true) {
       localStorage.setItem('cfg_model', data.model);
       const el = document.getElementById('cfg-model'); if (el) el.value = data.model;
     }
-    if (data.sync_id) {
-      localStorage.setItem('cfg_syncid', data.sync_id);
-      const el = document.getElementById('cfg-syncid'); if (el) el.value = data.sync_id;
-    }
     if (show) showToast('Đã tải config từ server. API Key cần nhập trên thiết bị này.');
   } catch (e) {
     console.log('loadServerConfig error:', e);
@@ -1140,22 +1193,9 @@ async function loadServerConfig(show = true) {
   }
 }
 
-async function copySyncId() {
-  const id = document.getElementById('cfg-syncid').value.trim();
-  if (!id) { showToast('Chưa có Sync ID'); return; }
-  try {
-    await navigator.clipboard.writeText(id);
-    showToast('Đã copy Sync ID ✓');
-  } catch (e) {
-    showToast('Sync ID: ' + id);
-  }
-}
-
 async function checkConfigOnStart() {
   if (isConfigured()) {
     document.getElementById('settings-btn').classList.add('configured');
-  } else {
-    await loadServerConfig(false);
   }
 }
 checkConfigOnStart();
@@ -1247,45 +1287,62 @@ setInterval(() => {
 
 <div id="settings-overlay" onclick="overlayClick(event)">
   <div id="settings-panel">
-    <h3>⚙️ Cài đặt kết nối AI</h3>
-    <div class="setting-group">
-      <label>BASE URL</label>
-      <input id="cfg-baseurl" type="url" placeholder="https://api.example.com/v1">
+
+    <!-- Drag handle -->
+    <div class="settings-handle"></div>
+
+    <!-- Header -->
+    <div class="settings-header">
+      <div class="settings-title">Cài đặt</div>
+      <button class="settings-close-btn" onclick="closeSettings()" type="button">✕</button>
     </div>
-    <div class="setting-group">
-      <label>API KEY</label>
-      <input id="cfg-apikey" type="password" placeholder="sk-...">
-    </div>
-    <div class="setting-group">
-      <label>MODEL</label>
-      <input id="cfg-model" type="text" placeholder="gpt-4o">
-    </div>
-    <div class="setting-group">
-      <label>SYNC ID</label>
-      <div class="setting-row">
-        <input id="cfg-syncid" type="text" placeholder="kim-abc123">
-        <button class="setting-mini-btn" onclick="generateSyncId()" type="button">Tạo</button>
-        <button class="setting-mini-btn" onclick="copySyncId()" type="button">Copy</button>
+
+    <!-- Section: Kết nối AI -->
+    <div class="settings-section">
+      <div class="settings-section-label">Kết nối AI</div>
+
+      <div class="setting-group">
+        <label>Base URL</label>
+        <input id="cfg-baseurl" type="url" placeholder="https://api.example.com/v1">
       </div>
-      <small class="setting-hint">Dùng cùng Sync ID trên thiết bị khác để dùng chung dữ liệu server. API Key không được tải về tự động.</small>
-    </div>
-    <button id="settings-save" onclick="saveSettings()">Lưu</button>
-    <button class="setting-mini-btn" onclick="loadServerConfig(true)" type="button">Tải config từ server</button>
-    <button id="settings-cancel" onclick="closeSettings()">Huỷ</button>
-
-    <div class="setting-divider"></div>
-    <div class="setting-group">
-      <label>ĐOẠN CHAT</label>
-      <button id="settings-reset-chat" onclick="resetChat()">🗑️ Xoá toàn bộ đoạn chat</button>
-      <small id="reset-chat-hint">Xoá lịch sử chat đang lưu trên server. Hành động không hoàn tác.</small>
+      <div class="setting-group">
+        <label>API Key</label>
+        <input id="cfg-apikey" type="password" placeholder="sk-...">
+      </div>
+      <div class="setting-group">
+        <label>Model</label>
+        <input id="cfg-model" type="text" placeholder="gpt-4o">
+      </div>
+      <button class="setting-mini-btn" onclick="loadServerConfig(true)" type="button" style="align-self:flex-start;padding:7px 14px;">↓ Tải config từ server</button>
     </div>
 
-    <div class="setting-divider"></div>
-    <div class="setting-group">
-      <label>DỮ LIỆU</label>
-      <button id="settings-view-db" onclick="window.open('/db','_blank')">🗄️ Xem database (memory.db)</button>
-      <small id="view-db-hint">Mở trang xem tất cả bảng — task, goal, event, journal, nhắc... (che API key).</small>
+    <!-- Section: Dữ liệu & quản lý -->
+    <div class="settings-section">
+      <div class="settings-section-label">Dữ liệu</div>
+
+      <button id="settings-view-db" class="settings-action-row" onclick="window.open('/db','_blank')" type="button">
+        <span class="settings-action-icon">🗄️</span>
+        <div class="settings-action-content">
+          <div class="settings-action-title">Xem database</div>
+          <div class="settings-action-desc">Xem toàn bộ bảng: task, goal, event, journal, nhắc nhở…</div>
+        </div>
+      </button>
+
+      <button id="settings-reset-chat" class="settings-action-row danger" onclick="resetChat()" type="button">
+        <span class="settings-action-icon">🗑️</span>
+        <div class="settings-action-content">
+          <div class="settings-action-title">Xoá toàn bộ đoạn chat</div>
+          <div class="settings-action-desc">Xoá lịch sử trên server — không thể hoàn tác</div>
+        </div>
+      </button>
     </div>
+
+    <!-- Footer: Save + Cancel -->
+    <div class="settings-footer">
+      <button id="settings-cancel" onclick="closeSettings()" type="button">Huỷ</button>
+      <button id="settings-save" onclick="saveSettings()" type="button">Lưu cài đặt</button>
+    </div>
+
   </div>
 </div>
 
