@@ -63,13 +63,74 @@
     background: var(--bg);
   }
 
+  /* Header */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    padding-top: max(10px, calc(env(safe-area-inset-top) + 6px));
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    position: relative;
+    z-index: 10;
+    flex-shrink: 0;
+  }
+
+  .avatar {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: var(--accent2);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+
+  .avatar img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+  }
+
+  .header-info { flex: 1; min-width: 0; }
+  .header-name { font-weight: 500; font-size: 15px; line-height: 1.2; }
+  .header-status { font-size: 12px; color: var(--muted); line-height: 1.2; margin-top: 2px; }
+  .status-dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #22c55e;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+
+  .header-actions { display: flex; align-items: center; gap: 8px; }
+  .header-icon-btn {
+    width: 36px; height: 36px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: border-color .2s, color .2s, background .2s, transform .1s;
+    -webkit-user-select: none; user-select: none;
+  }
+  .header-icon-btn svg {
+    width: 19px; height: 19px;
+    stroke: currentColor; fill: none;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  }
+  .header-icon-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(79,142,247,.1); }
+  .header-icon-btn:active { transform: scale(.96); }
+  .header-icon-btn.enabled, .header-icon-btn.configured { border-color: #22c55e; color: #22c55e; }
+
   /* Messages */
   #messages {
     flex: 1;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     padding: 16px;
-    padding-top: max(14px, calc(env(safe-area-inset-top) + 54px));
+    padding-top: 16px;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -560,7 +621,7 @@
     display: flex; align-items: center; justify-content: center;
     color: var(--muted);
   }
-  .settings-action-icon svg, .icon-btn svg {
+  .settings-action-icon svg {
     width: 20px; height: 20px;
     stroke: currentColor; fill: none;
     stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
@@ -574,28 +635,6 @@
   .settings-action-row.danger:hover .settings-action-icon { filter: saturate(2); }
   #settings-reset-chat:disabled { opacity: .4; cursor: not-allowed; }
 
-  .icon-btn {
-    display: flex; align-items: center; justify-content: center;
-    border: 1px solid var(--border);
-    color: var(--muted);
-    background: rgba(26,26,26,.86);
-    border-radius: 999px;
-    cursor: pointer;
-    -webkit-user-select: none; user-select: none;
-    transition: border-color .2s, color .2s, background .2s, transform .1s;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-  }
-  .icon-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(79,142,247,.12); }
-  .icon-btn:active { transform: scale(.96); }
-  .icon-btn.configured { border-color: #22c55e; color: #22c55e; }
-  #floating-settings-btn {
-    position: fixed;
-    top: max(12px, calc(env(safe-area-inset-top) + 8px));
-    right: max(12px, calc(env(safe-area-inset-right) + 8px));
-    z-index: 100;
-    width: 42px; height: 42px;
-  }
   #settings-notification-toggle.enabled { border-color: #22c55e; }
   #settings-notification-toggle.enabled .settings-action-icon,
   #settings-notification-toggle.enabled .settings-action-title { color: #22c55e; }
@@ -615,9 +654,21 @@
 </head>
 <body>
 <div id="app">
-  <button id="floating-settings-btn" class="icon-btn" onclick="openSettings()" title="Cài đặt" aria-label="Cài đặt">
-    <svg viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.36a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.64 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15 4.64a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.14.32.36.59.64.77.28.18.6.27.96.27H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15Z"/></svg>
-  </button>
+  <header>
+    <div class="avatar"><img src="/static/icon.jpg" alt="Thư ký Kim"></div>
+    <div class="header-info">
+      <div class="header-name">Thư ký Kim</div>
+      <div class="header-status"><span class="status-dot"></span>Đang hoạt động</div>
+    </div>
+    <div class="header-actions">
+      <button id="notif-btn" class="header-icon-btn" onclick="toggleNotification()" title="Thông báo" aria-label="Thông báo">
+        <svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      </button>
+      <button id="settings-btn" class="header-icon-btn" onclick="openSettings()" title="Cài đặt" aria-label="Cài đặt">
+        <svg viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.36a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.64 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15 4.64a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.14.32.36.59.64.77.28.18.6.27.96.27H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15Z"/></svg>
+      </button>
+    </div>
+  </header>
 
   <div id="messages">
     <div id="empty">
@@ -1023,9 +1074,11 @@ async function toggleNotification() {
 }
 
 function setNotifBtn(on) {
+  const headerBtn = document.getElementById('notif-btn');
   const btn = document.getElementById('settings-notification-toggle');
   const icon = document.getElementById('settings-notification-icon');
   const desc = document.getElementById('settings-notification-desc');
+  if (headerBtn) headerBtn.classList.toggle('enabled', !!on);
   if (btn) btn.classList.toggle('enabled', !!on);
   if (icon) icon.innerHTML = on ? ICONS.bell : ICONS.bellOff;
   if (desc) desc.textContent = on ? 'Đã bật thông báo' : 'Chưa bật thông báo';
@@ -1154,7 +1207,7 @@ async function saveSettings() {
   localStorage.setItem('cfg_apikey',  apiKey);
   localStorage.setItem('cfg_model',   model);
 
-  document.getElementById('floating-settings-btn')?.classList.add('configured');
+  document.getElementById('settings-btn')?.classList.add('configured');
   showToast('Đã lưu cài đặt ✓');
   closeSettings();
 }
@@ -1181,7 +1234,7 @@ async function loadServerConfig(show = true) {
 
 async function checkConfigOnStart() {
   if (isConfigured()) {
-    document.getElementById('floating-settings-btn')?.classList.add('configured');
+    document.getElementById('settings-btn')?.classList.add('configured');
   }
 }
 checkConfigOnStart();
