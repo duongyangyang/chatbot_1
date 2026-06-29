@@ -638,17 +638,52 @@
   #settings-notification-toggle.enabled { border-color: #22c55e; }
   #settings-notification-toggle.enabled .settings-action-icon,
   #settings-notification-toggle.enabled .settings-action-title { color: #22c55e; }
+  .settings-action-row.data-active { border-color: var(--accent); background: rgba(79,142,247,.08); }
+  .settings-action-row.data-active .settings-action-icon,
+  .settings-action-row.data-active .settings-action-title { color: var(--accent); }
   .settings-data-view {
-    display: none; flex-direction: column; gap: 8px;
-    max-height: 260px; overflow: auto;
-    background: #111; border: 1px solid var(--border);
-    border-radius: 12px; padding: 10px;
+    display: none; flex-direction: column; gap: 10px;
+    max-height: 60dvh; overflow: auto;
+    background: #101010; border: 1px solid var(--border);
+    border-radius: 14px; padding: 10px;
   }
   .settings-data-view.open { display: flex; }
-  .settings-data-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; }
+  .settings-data-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; position: sticky; top: -10px; background: #101010; padding: 2px 0 8px; z-index: 1; }
   .settings-data-close { background: transparent; border: 0; color: var(--muted); font-size: 18px; cursor: pointer; }
-  .settings-data-item { border: 1px solid var(--border); border-radius: 10px; padding: 9px 10px; background: var(--surface); font-size: 12px; color: var(--text); }
-  .settings-data-meta { color: var(--muted); font-size: 10px; margin-bottom: 3px; }
+  .settings-data-note { color: var(--muted); font-size: 11px; text-align: center; padding: 2px 0; }
+  .settings-data-empty { border: 1px dashed var(--border); border-radius: 12px; padding: 14px; color: var(--muted); font-size: 12px; text-align: center; }
+  .data-section-date { align-self: center; color: var(--muted); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; padding: 3px 10px; border: 1px solid var(--border); border-radius: 999px; background: #151515; }
+  .data-msg-row { display: flex; flex-direction: column; gap: 3px; max-width: 92%; }
+  .data-msg-row.role-user { align-self: flex-end; align-items: flex-end; }
+  .data-msg-row.role-ai { align-self: flex-start; align-items: flex-start; }
+  .data-msg-meta { color: var(--muted); font-size: 10px; padding: 0 4px; }
+  .data-msg-bubble { border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; font-size: 12px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; background: var(--surface); }
+  .role-user .data-msg-bubble { background: rgba(29,58,110,.6); color: #d6e4ff; border-color: rgba(79,142,247,.28); }
+  .role-ai .data-msg-bubble { background: #1b1b1b; }
+  .task-section-title { color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; margin-top: 2px; }
+  .task-item, .mem-item { border: 1px solid var(--border); border-radius: 12px; padding: 10px; background: var(--surface); }
+  .task-item { display: flex; gap: 9px; align-items: flex-start; }
+  .task-item.done { opacity: .62; }
+  .task-main { flex: 1; min-width: 0; }
+  .task-title { font-size: 13px; color: var(--text); line-height: 1.35; }
+  .task-item.done .task-title { text-decoration: line-through; }
+  .task-notes { color: var(--muted); font-size: 11px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .task-meta-row, .mem-meta-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+  .task-priority, .task-status-badge, .task-due, .mem-type-badge, .mem-importance, .mem-time { border-radius: 999px; padding: 2px 7px; font-size: 10px; line-height: 1.4; border: 1px solid var(--border); color: var(--muted); background: #141414; }
+  .task-priority.p1 { border-color: rgba(239,68,68,.55); color: #f87171; }
+  .task-priority.p2 { border-color: rgba(249,115,22,.55); color: #fb923c; }
+  .task-priority.p3 { border-color: rgba(107,114,128,.6); color: #9ca3af; }
+  .task-status-badge.open { border-color: rgba(34,197,94,.5); color: #4ade80; }
+  .task-status-badge.done { border-color: rgba(148,163,184,.35); color: #94a3b8; }
+  .task-due { color: #93c5fd; border-color: rgba(147,197,253,.35); }
+  .mem-item { display: flex; flex-direction: column; gap: 6px; }
+  .mem-content { color: var(--text); font-size: 12px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+  .mem-type-badge.fact { color: #93c5fd; border-color: rgba(147,197,253,.4); }
+  .mem-type-badge.preference { color: #c4b5fd; border-color: rgba(196,181,253,.4); }
+  .mem-type-badge.journal { color: #86efac; border-color: rgba(134,239,172,.35); }
+  .mem-type-badge.note { color: #d1d5db; border-color: rgba(209,213,219,.25); }
+  .mem-importance { color: #facc15; letter-spacing: 1px; }
+  .mem-time { margin-left: auto; }
 
 </style>
 </head>
@@ -737,6 +772,28 @@ function handleKey(e) {
 
 function now() {
   return new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDateTimeShort(value, opts) {
+  if (!value) return '';
+  const d = new Date(String(value).replace(' ', 'T'));
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleString('vi-VN', opts || { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function relativeTime(value) {
+  if (!value) return '';
+  const d = new Date(String(value).replace(' ', 'T'));
+  if (Number.isNaN(d.getTime())) return String(value);
+  const diff = Date.now() - d.getTime();
+  const minute = 60 * 1000, hour = 60 * minute, day = 24 * hour, week = 7 * day;
+  if (diff < minute) return 'vừa xong';
+  if (diff < hour) return `${Math.floor(diff / minute)} phút trước`;
+  if (diff < day) return `${Math.floor(diff / hour)} giờ trước`;
+  if (diff < 2 * day) return 'hôm qua';
+  if (diff < week) return `${Math.floor(diff / day)} ngày trước`;
+  if (diff < 5 * week) return `${Math.floor(diff / week)} tuần trước`;
+  return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 function showEmpty(show) {
@@ -1244,30 +1301,138 @@ function closeSettingsData() {
   if (!box) return;
   box.classList.remove('open');
   box.innerHTML = '';
+  activeDataKind = null;
+  setActiveDataButton(null);
+}
+
+let activeDataKind = null;
+
+function setActiveDataButton(kind) {
+  document.querySelectorAll('[data-settings-kind]').forEach(btn => {
+    btn.classList.toggle('data-active', btn.dataset.settingsKind === kind);
+  });
+}
+
+function renderDataHead(title, count) {
+  return `<div class="settings-data-head"><span>${escapeHtml(title)} (${count})</span><button class="settings-data-close" onclick="closeSettingsData()" type="button" aria-label="Đóng">×</button></div>`;
+}
+
+function historyDateLabel(value) {
+  if (!value) return 'Không rõ ngày';
+  const d = new Date(String(value).replace(' ', 'T'));
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function historyTimeLabel(value) {
+  if (!value) return '';
+  const d = new Date(String(value).replace(' ', 'T'));
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+}
+
+function renderHistoryItems(items) {
+  const shown = items.slice(-50);
+  let html = '';
+  let currentDate = '';
+  for (const it of shown) {
+    const dateLabel = historyDateLabel(it.created_at || '');
+    if (dateLabel !== currentDate) {
+      currentDate = dateLabel;
+      html += `<div class="data-section-date">${escapeHtml(dateLabel)}</div>`;
+    }
+    const isAi = it.role === 'assistant' || it.role === 'ai';
+    const roleLabel = isAi ? 'Kim' : 'Bạn';
+    const body = isAi ? renderMarkdown(it.content || '') : escapeHtml(it.content || '');
+    html += `<div class="data-msg-row ${isAi ? 'role-ai' : 'role-user'}">
+      <div class="data-msg-meta">${escapeHtml(roleLabel)} · ${escapeHtml(historyTimeLabel(it.created_at || ''))}</div>
+      <div class="data-msg-bubble">${body}</div>
+    </div>`;
+  }
+  if (items.length > shown.length) {
+    html += `<div class="settings-data-note">Đang hiển thị ${shown.length}/${items.length} tin gần nhất.</div>`;
+  }
+  return html;
+}
+
+function taskPriorityClass(priority) {
+  const p = Number(priority || 3);
+  if (p <= 1) return 'p1';
+  if (p === 2) return 'p2';
+  return 'p3';
+}
+
+function renderTaskGroup(title, items) {
+  if (!items.length) return '';
+  let html = `<div class="task-section-title">${escapeHtml(title)} (${items.length})</div>`;
+  html += items.map(it => {
+    const done = it.status === 'done';
+    const due = it.due_at ? formatDateTimeShort(it.due_at, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+    const notes = it.notes || it.note || '';
+    const prio = Number(it.priority || 3);
+    return `<div class="task-item ${done ? 'done' : ''}">
+      <span class="task-priority ${taskPriorityClass(prio)}">P${prio}</span>
+      <div class="task-main">
+        <div class="task-meta-row">
+          <span class="task-status-badge ${done ? 'done' : 'open'}">${done ? 'Đã xong' : 'Đang mở'}</span>
+          ${due ? `<span class="task-due">Hạn ${escapeHtml(due)}</span>` : ''}
+        </div>
+        <div class="task-title">${escapeHtml(it.title || '')}</div>
+        ${notes ? `<div class="task-notes">${escapeHtml(notes)}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  return html;
+}
+
+function renderTaskItems(items) {
+  const open = items.filter(it => it.status !== 'done');
+  const done = items.filter(it => it.status === 'done');
+  return renderTaskGroup('Đang mở', open) + renderTaskGroup('Đã xong', done);
+}
+
+function memoryTypeLabel(type) {
+  const map = { fact: 'Sự thật', preference: 'Sở thích', journal: 'Nhật ký', note: 'Ghi chú' };
+  return map[type] || type || 'Ghi nhớ';
+}
+
+function renderImportance(value) {
+  const n = Math.max(1, Math.min(5, Number(value || 1)));
+  return '●'.repeat(n) + '○'.repeat(5 - n);
+}
+
+function memoryTypeClass(type) {
+  const t = String(type || 'note').toLowerCase();
+  return ['fact', 'preference', 'journal', 'note'].includes(t) ? t : 'note';
+}
+
+function renderMemoryItems(items) {
+  return items.map(it => {
+    const type = String(it.type || 'note').toLowerCase();
+    return `<div class="mem-item">
+      <div class="mem-meta-row">
+        <span class="mem-type-badge ${memoryTypeClass(type)}">${escapeHtml(memoryTypeLabel(type))}</span>
+        <span class="mem-importance" title="Độ quan trọng ${escapeHtml(String(it.importance || 1))}/5">${renderImportance(it.importance)}</span>
+        <span class="mem-time">${escapeHtml(relativeTime(it.created_at || ''))}</span>
+      </div>
+      <div class="mem-content">${escapeHtml(it.content || '')}</div>
+    </div>`;
+  }).join('');
 }
 
 function renderSettingsData(kind, items) {
   const box = document.getElementById('settings-data-view');
   if (!box) return;
   const title = kind === 'history' ? 'Lịch sử chat' : kind === 'tasks' ? 'Tasks' : 'Memories';
-  let html = `<div class="settings-data-head"><span>${title} (${items.length})</span><button class="settings-data-close" onclick="closeSettingsData()" type="button" aria-label="Đóng">×</button></div>`;
+  let html = renderDataHead(title, items.length);
   if (!items.length) {
-    html += '<div class="settings-data-item">Chưa có dữ liệu.</div>';
+    html += '<div class="settings-data-empty">Chưa có dữ liệu.</div>';
   } else if (kind === 'history') {
-    html += items.map(it => {
-      const role = it.role === 'assistant' ? 'Kim' : 'Bạn';
-      return `<div class="settings-data-item"><div class="settings-data-meta">${escapeHtml(role)} · ${escapeHtml(it.created_at || '')}</div>${escapeHtml(it.content || '')}</div>`;
-    }).join('');
+    html += renderHistoryItems(items);
   } else if (kind === 'tasks') {
-    html += items.map(it => {
-      const due = it.due_at ? ` · hạn ${it.due_at}` : '';
-      return `<div class="settings-data-item"><div class="settings-data-meta">${escapeHtml(it.status || '')}${escapeHtml(due)}</div>${escapeHtml(it.title || '')}</div>`;
-    }).join('');
+    html += renderTaskItems(items);
   } else {
-    html += items.map(it => {
-      const meta = [it.type, it.importance ? `ưu tiên ${it.importance}` : '', it.created_at || ''].filter(Boolean).join(' · ');
-      return `<div class="settings-data-item"><div class="settings-data-meta">${escapeHtml(meta)}</div>${escapeHtml(it.content || '')}</div>`;
-    }).join('');
+    html += renderMemoryItems(items);
   }
   box.innerHTML = html;
   box.classList.add('open');
@@ -1275,8 +1440,14 @@ function renderSettingsData(kind, items) {
 
 async function showSettingsData(kind) {
   const box = document.getElementById('settings-data-view');
+  if (activeDataKind === kind && box?.classList.contains('open')) {
+    closeSettingsData();
+    return;
+  }
+  activeDataKind = kind;
+  setActiveDataButton(kind);
   if (box) {
-    box.innerHTML = '<div class="settings-data-item">Đang tải...</div>';
+    box.innerHTML = '<div class="settings-data-empty">Đang tải...</div>';
     box.classList.add('open');
   }
   const url = kind === 'history' ? '/history' : kind === 'tasks' ? '/tasks?status=all' : '/memories?limit=50';
@@ -1287,7 +1458,7 @@ async function showSettingsData(kind) {
     renderSettingsData(kind, data.items || []);
   } catch (e) {
     console.log('showSettingsData error:', e);
-    if (box) box.innerHTML = `<div class="settings-data-head"><span>Lỗi</span><button class="settings-data-close" onclick="closeSettingsData()" type="button" aria-label="Đóng">×</button></div><div class="settings-data-item">Không tải được dữ liệu.</div>`;
+    if (box) box.innerHTML = `<div class="settings-data-head"><span>Lỗi</span><button class="settings-data-close" onclick="closeSettingsData()" type="button" aria-label="Đóng">×</button></div><div class="settings-data-empty">Không tải được dữ liệu.</div>`;
     showToast('Không tải được dữ liệu');
   }
 }
@@ -1412,7 +1583,7 @@ setInterval(() => {
     <div class="settings-section">
       <div class="settings-section-label">Dữ liệu</div>
 
-      <button id="settings-chat-history" class="settings-action-row" onclick="showSettingsData('history')" type="button">
+      <button id="settings-chat-history" data-settings-kind="history" class="settings-action-row" onclick="showSettingsData('history')" type="button">
         <span class="settings-action-icon"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6"/><path d="M12 7v5l3 2"/></svg></span>
         <div class="settings-action-content">
           <div class="settings-action-title">Lịch sử chat</div>
@@ -1420,7 +1591,7 @@ setInterval(() => {
         </div>
       </button>
 
-      <button id="settings-task-history" class="settings-action-row" onclick="showSettingsData('tasks')" type="button">
+      <button id="settings-task-history" data-settings-kind="tasks" class="settings-action-row" onclick="showSettingsData('tasks')" type="button">
         <span class="settings-action-icon"><svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
         <div class="settings-action-content">
           <div class="settings-action-title">Tasks</div>
@@ -1428,7 +1599,7 @@ setInterval(() => {
         </div>
       </button>
 
-      <button id="settings-memories" class="settings-action-row" onclick="showSettingsData('memories')" type="button">
+      <button id="settings-memories" data-settings-kind="memories" class="settings-action-row" onclick="showSettingsData('memories')" type="button">
         <span class="settings-action-icon"><svg viewBox="0 0 24 24"><path d="M12 3a4 4 0 0 0-4 4v1H7a4 4 0 0 0 0 8h1v1a4 4 0 0 0 8 0v-1h1a4 4 0 0 0 0-8h-1V7a4 4 0 0 0-4-4Z"/><path d="M8 8h8M8 16h8M12 3v18"/></svg></span>
         <div class="settings-action-content">
           <div class="settings-action-title">Memories</div>
