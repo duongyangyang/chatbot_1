@@ -1734,6 +1734,7 @@ async def pending():
             "period": payload.get("period", "") or payload.get("date", ""),
             "content": payload.get("content", ""),
             "interactive": bool(payload.get("interactive", False)),
+            "created_at": job.get("created_at") or "",
         }
         if job["type"] == "morning_planning" and payload.get("slots"):
             item["schedule_id"] = job["id"]
