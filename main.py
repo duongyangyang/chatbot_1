@@ -336,8 +336,8 @@ def _register_backup_job():
 def msg_add(role: str, content: str, metadata: dict = None):
     meta = json.dumps(metadata, ensure_ascii=False) if metadata else None
     with db() as c:
-        c.execute("INSERT INTO messages(role, content, metadata_json) VALUES(?,?,?)",
-                  (role, content, meta))
+        c.execute("INSERT INTO messages(role, content, metadata_json, created_at) VALUES(?,?,?,?)",
+                  (role, content, meta, _now_iso()))
     _mark_backup_dirty()
 
 def msg_recent(n: int = 20) -> list[dict]:
