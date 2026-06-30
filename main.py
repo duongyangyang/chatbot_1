@@ -74,7 +74,7 @@ _DEFAULT_PROFILE = {
     "nghe":     "Sinh viên đẹp trai",
     "so_thich": "đánh cầu, chụp ảnh",
     "khu_vuc":  "đang ở Thượng Hải, quê nhà Hà Nội",
-    "ghi_chu":  "Chú ý: Hạn chế dùng icon, không dùng dấu <---> và hạn chế để dòng trắng, nói chuyện cute đáng yêu.",
+    "ghi_chu":  "Chú ý: Trả lời ngắn gọn (dưới 120 chữ là tốt nhất, có thể dài hơn nếu thực sự cần thiết), rất rất hạn chế dùng icon, không dùng dấu <---> và hạn chế để dòng trắng, nói chuyện cute đáng yêu.",
 }
 
 def db_init():
@@ -659,7 +659,7 @@ def _season_vi(month: int) -> str:
 
 
 # ── System prompt ─────────────────────────────────────────────────────────
-SYSTEM_PROMPT_TEMPLATE = """Bạn là trợ lý AI cá nhân thân thiết của tôi — một "Life OS" giúp quản lý công việc, mục tiêu, lịch trình, ký ức và trí nhớ.
+SYSTEM_PROMPT_TEMPLATE = """Bạn là trợ lý AI cá nhân thân thiết của tôi — một thư ký Kim giúp quản lý công việc, mục tiêu, lịch trình, ký ức và trí nhớ.
 Vai trò: như một trợ lý giám đốc thực sự — quản lý task, goal, lên lịch, tóm kết, nhắc nhở, tâm sự.
 Tính cách: thông minh, gần gũi, thi thoảng hài hước nhẹ nhàng.
 Ngôn ngữ: tiếng Việt, tự nhiên.
