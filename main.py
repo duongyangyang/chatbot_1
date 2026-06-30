@@ -528,6 +528,23 @@ def job_update_payload(job_id: int, payload: dict):
     _mark_backup_dirty()
 
 
+def _mark_pending_read_by_type(job_type: str):
+    """Dismiss các job pending cũ cùng loại (tránh trùng card khi trigger thủ công).
+    Bỏ qua job interactive (form daily_review đang chờ user tick)."""
+    with db() as c:
+        rows = c.execute(
+            "SELECT id, payload_json FROM jobs WHERE type=? AND status='pending'", (job_type,)
+        ).fetchall()
+    for r in rows:
+        try:
+            pl = json.loads(r["payload_json"] or "{}")
+        except Exception:
+            pl = {}
+        if pl.get("interactive"):
+            continue
+        job_mark_read(r["id"])
+
+
 # ── User profile / Life OS state / App config ───────────────────────────
 def profile_get() -> dict:
     with db() as c:
@@ -1336,7 +1353,7 @@ def task_create_from_slot(slot: dict, date: str) -> dict:
             pass
     return {"ok": True, "id": t["id"], "title": title, "remind_at": remind_at}
 
-def _run_morning_planning(client, mdl) -> dict:
+def _run_morning_planning(client, mdl, push: bool = True) -> dict:
     tomorrow = (datetime.now(TZ) + timedelta(days=1)).strftime("%Y-%m-%d")
     bundle = _build_planning_bundle()
     sys_prompt = build_system_prompt() + "\n\n# Yêu cầu lượt này\n" + _JOB_DIRECTIVES["morning_planning"]
@@ -1375,26 +1392,30 @@ def _run_morning_planning(client, mdl) -> dict:
         slots = _parse_slots_json(reply)
         if not slots:
             jid = job_create("morning_planning", payload={"content": reply, "date": tomorrow, "slots": None})
-            send_push("Lịch ngày mai", "Mở app để xem (không lấy được slots JSON)")
+            if push:
+                send_push("Lịch ngày mai", "Mở app để xem (không lấy được slots JSON)")
             print(f"[proactive] morning_planning no-slots job={jid['id']}")
-            return {"job": "morning_planning", "ok": True, "content": reply, "slots": None}
+            return {"job": "morning_planning", "ok": True, "content": reply, "slots": None,
+                    "job_id": jid["id"], "date": tomorrow}
         jid = job_create("morning_planning", payload={"slots": slots, "date": tomorrow, "content": reply})
-        send_push("Lịch ngày mai sẵn sàng", "Mở app để duyệt")
+        if push:
+            send_push("Lịch ngày mai sẵn sàng", "Mở app để duyệt")
         print(f"[proactive] morning_planning slots={len(slots)} job={jid['id']}")
-        return {"job": "morning_planning", "ok": True, "content": reply, "slots": slots, "job_id": jid["id"]}
+        return {"job": "morning_planning", "ok": True, "content": reply, "slots": slots,
+                "job_id": jid["id"], "date": tomorrow}
     except Exception as e:
         print(f"[proactive] morning_planning error: {type(e).__name__}: {e}")
         return {"job": "morning_planning", "ok": False, "error": f"{type(e).__name__}: {e}"}
 
-def _run_proactive_job(job_type: str) -> dict:
-    result = {"job": job_type, "ok": False, "content": "", "error": None}
+def _run_proactive_job(job_type: str, push: bool = True) -> dict:
+    result = {"job": job_type, "ok": False, "content": "", "error": None, "job_id": None}
     client, mdl = _server_client()
     if not client:
         result["error"] = "chưa có API key"
         print(f"[proactive] {job_type} skip: {result['error']}")
         return result
     if job_type == "morning_planning":
-        return _run_morning_planning(client, mdl)
+        return _run_morning_planning(client, mdl, push=push)
     bundle = _build_context_bundle()
     sys_prompt = build_system_prompt() + "\n\n# Yêu cầu lượt này\n" + _JOB_DIRECTIVES.get(job_type, "")
     messages = [
@@ -1432,8 +1453,9 @@ def _run_proactive_job(job_type: str) -> dict:
             "weekly_review": "📅 Tổng kết tuần",
             "monthly_review": "🗓️ Tổng kết tháng",
         }.get(job_type, "Trợ lý Kim")
-        send_push(push_title, "Mở app để xem chi tiết")
-        result.update({"ok": True, "content": reply})
+        if push:
+            send_push(push_title, "Mở app để xem chi tiết")
+        result.update({"ok": True, "content": reply, "job_id": jid["id"]})
         print(f"[proactive] {job_type} done")
     except Exception as e:
         result["error"] = f"{type(e).__name__}: {e}"
@@ -1758,9 +1780,43 @@ async def daily_review_today():
         "done_today": data["done_today"],
     })
 
+def _llm_summarize_day(done_titles, still_open_titles, other_done, bundle):
+    """Một lượt LLM (không tool) viết tổng kết cuối ngày. Trả str hoặc None nếu fail/không key.
+    Bundle đã chứa context (tasks/goals/state/memories) nên không cần tool call."""
+    client, mdl = _server_client()
+    if not client:
+        return None
+    today = datetime.now(TZ).strftime("%Y-%m-%d")
+    sys_prompt = build_system_prompt() + "\n\n# Yêu cầu lượt này\n" + _JOB_DIRECTIVES["daily_review"]
+    done_blk = ("\n".join(f"- {t}" for t in done_titles) or "(không có)")
+    open_blk = ("\n".join(f"- {t}" for t in still_open_titles) or "(không có)")
+    other_blk = other_done or "(không)"
+    user = (
+        f"## Ngày: {today}\n## Context:\n{bundle}\n\n"
+        f"## Dữ liệu người dùng tổng kết:\n"
+        f"### Đã hoàn thành:\n{done_blk}\n"
+        f"### Còn dang dở:\n{open_blk}\n"
+        f"### Việc khác:\n{other_blk}\n\n"
+        f"Viết tổng kết cuối ngày bằng markdown tiếng Việt, ngắn gọn, ấm áp, có tinh thần động viên. "
+        f"Gợi ý ưu tiên cho ngày mai nếu có việc dang dở. Dữ liệu đã sẵn sàng, KHÔNG cần gọi get_context "
+        f"hay tool nào."
+    )
+    try:
+        resp = client.chat.completions.create(
+            model=mdl,
+            messages=[{"role": "system", "content": sys_prompt}, {"role": "user", "content": user}],
+            max_tokens=800,
+        )
+        reply, _ = _split_thinking((resp.choices[0].message.content or "").strip())
+        return reply or None
+    except Exception as e:
+        print(f"[daily-review] LLM summarize error: {type(e).__name__}: {e}")
+        return None
+
+
 @app.post("/daily-review/submit")
 async def daily_review_submit(request: Request):
-    """Tổng kết ngày hardcode (KHÔNG LLM): complete các task được tick + build text + lưu journal."""
+    """Tổng kết ngày: complete các task được tick + dùng LLM viết summary (fallback hardcode nếu fail)."""
     data = await request.json()
     job_id = data.get("job_id")
     completed = data.get("completed_task_ids", []) or []
@@ -1787,17 +1843,25 @@ async def daily_review_submit(request: Request):
         except (TypeError, ValueError):
             continue
     still_open = [t for t in td["pending_today"] if t["id"] not in completed_int]
+    still_open_titles = [t["title"] for t in still_open]
 
-    parts = [f"## Tổng kết ngày {today}"]
-    if done_titles:
-        parts.append("**Đã hoàn thành:**\n" + "\n".join(f"- {t}" for t in done_titles))
-    if still_open:
-        parts.append("**Còn dang dở:**\n" + "\n".join(f"- {t['title']}" for t in still_open))
-    if other_done:
-        parts.append(f"**Ghi chú thêm:**\n{other_done}")
-    if not done_titles and not still_open and not other_done:
-        parts.append("Hôm nay chưa có việc nào được ghi nhận. Ngày mai cố gắng nhé!")
-    summary = "\n\n".join(parts)
+    # Thử LLM tổng kết; nếu fail/không key → fallback hardcode.
+    summary = None
+    try:
+        summary = _llm_summarize_day(done_titles, still_open_titles, other_done, _build_context_bundle())
+    except Exception as e:
+        print(f"[daily-review] summarize call error: {e}")
+    if not summary:
+        parts = [f"## Tổng kết ngày {today}"]
+        if done_titles:
+            parts.append("**Đã hoàn thành:**\n" + "\n".join(f"- {t}" for t in done_titles))
+        if still_open:
+            parts.append("**Còn dang dở:**\n" + "\n".join(f"- {t['title']}" for t in still_open))
+        if other_done:
+            parts.append(f"**Ghi chú thêm:**\n{other_done}")
+        if not done_titles and not still_open and not other_done:
+            parts.append("Hôm nay chưa có việc nào được ghi nhận. Ngày mai cố gắng nhé!")
+        summary = "\n\n".join(parts)
 
     memory_save(summary, type="journal", importance=3)
 
@@ -1868,6 +1932,25 @@ async def approve_morning(request: Request):
             pass
     return JSONResponse({"ok": True, "created": len(created), "skipped": len(skipped),
                          "tasks": created, "skipped_details": skipped})
+
+
+@app.post("/proactive/run")
+async def proactive_run(request: Request):
+    """Trigger proactive job thủ công (KHÔNG push). Kết quả trả về để hiển thị trong chat.
+    morning_planning có slots → giữ pending để user duyệt; còn lại → mark read (tránh trùng /pending)."""
+    data = await request.json()
+    job = (data.get("job") or "").strip()
+    if job not in _JOB_DIRECTIVES:
+        return JSONResponse({"ok": False, "error": f"job không hợp lệ: {job}"}, status_code=400)
+    _mark_pending_read_by_type(job)               # dedup: gỡ job pending cũ cùng loại
+    result = _run_proactive_job(job, push=False)
+    jid = result.get("job_id")
+    if jid is not None and not (job == "morning_planning" and result.get("slots")):
+        try:
+            job_mark_read(int(jid))
+        except Exception:
+            pass
+    return JSONResponse(result)
 
 
 # ── Debug endpoints ───────────────────────────────────────────────────────

@@ -69,7 +69,7 @@
     align-items: center;
     gap: 10px;
     padding: 10px 16px;
-    padding-top: max(10px, calc(env(safe-area-inset-top) + 6px));
+    border-top: 1px solid var(--border);
     border-bottom: 1px solid var(--border);
     background: var(--bg);
     position: relative;
@@ -123,6 +123,24 @@
   .header-icon-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(79,142,247,.1); }
   .header-icon-btn:active { transform: scale(.96); }
   .header-icon-btn.enabled, .header-icon-btn.configured { border-color: #22c55e; color: #22c55e; }
+
+  /* Quick-action bar (manual triggers phía trên input chat) */
+  .quick-actions {
+    display: flex; gap: 8px; padding: 6px 12px;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    border-top: 1px solid var(--border);
+    scrollbar-width: none;
+  }
+  .quick-actions::-webkit-scrollbar { display: none; }
+  .qa-btn {
+    flex-shrink: 0; padding: 7px 12px; font-size: 13px; font-family: var(--font);
+    border-radius: 18px; background: var(--bubble-ai); border: 1px solid var(--border);
+    color: var(--text); cursor: pointer; white-space: nowrap;
+    transition: border-color .15s, transform .1s;
+    -webkit-user-select: none; user-select: none;
+  }
+  .qa-btn:hover { border-color: var(--accent); }
+  .qa-btn:active { transform: scale(.97); }
 
   /* Messages */
   #messages {
@@ -190,6 +208,23 @@
   }
   .msg-row.ai .msg-time { text-align: left; }
 
+  /* Per-message action buttons (copy / resend / edit / regenerate) */
+  .msg-actions {
+    display: flex; gap: 4px; margin-top: 3px; opacity: 0;
+    transition: opacity .15s;
+    -webkit-user-select: none; user-select: none;
+  }
+  .msg-row:hover .msg-actions { opacity: 1; }
+  .msg-row.me .msg-actions { justify-content: flex-end; }
+  .msg-act-btn {
+    font-size: 13px; line-height: 1; padding: 4px 6px;
+    border: none; background: transparent; color: var(--muted);
+    cursor: pointer; border-radius: 6px; transition: background .15s, color .15s;
+  }
+  .msg-act-btn:hover { background: var(--border); color: var(--text); }
+  .msg-row.ai:not(.can-regen) .regen-btn { display: none; }
+  @media (hover: none) { .msg-actions { opacity: 1; } }
+
   /* Typing indicator */
   .typing { display: flex; gap: 4px; padding: 12px 14px; align-items: center; }
   .typing span {
@@ -226,14 +261,19 @@
 
   /* Input */
   #input-area {
-    padding: 12px 16px;
     padding-bottom: max(12px, env(safe-area-inset-bottom));
     border-top: 1px solid var(--border);
     background: var(--bg);
     display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+
+  .input-row {
+    display: flex;
     gap: 10px;
     align-items: flex-end;
-    flex-shrink: 0;
+    padding: 8px 16px 0;
   }
 
   #msg-input {
@@ -307,7 +347,7 @@
     padding: 40px;
     text-align: center;
   }
-  #empty .big { font-size: 40px; }
+  #empty .big { font-size: 0; line-height: 0; }
   #empty h2 { font-size: 16px; font-weight: 500; color: var(--text); }
   #empty p { font-size: 13px; line-height: 1.6; }
 
@@ -801,19 +841,27 @@
 
   <div id="messages">
     <div id="empty">
-      <div class="big">👋</div>
+      <div class="big"><svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:56px;height:56px"><circle cx="32" cy="32" r="28" fill="rgba(79,142,247,0.12)" stroke="rgba(79,142,247,0.3)" stroke-width="1.5"/><path d="M22 26c0-5.52 4.48-10 10-10s10 4.48 10 10c0 4.1-2.47 7.63-6 9.2V40h-8v-4.8C24.47 33.63 22 30.1 22 26z" fill="rgba(79,142,247,0.2)" stroke="#4f8ef7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M28 44h8M29 48h6" stroke="#4f8ef7" stroke-width="1.5" stroke-linecap="round"/><circle cx="45" cy="20" r="5" fill="rgba(34,197,94,0.15)" stroke="#22c55e" stroke-width="1.5"/><path d="M43 20l1.5 1.5L47 18" stroke="#22c55e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
       <h2>Xin chào! Tôi là Thư ký Kim aka Trợ lý AI của bạn</h2>
       <p id="empty-hint">Hỏi bất cứ điều gì, đặt lịch,<br>nhắc nhở, hoặc chỉ tâm sự thôi cũng được.</p>
       <div class="suggestion-chips">
-        <div class="chip" onclick="sendSuggestion('Hôm nay tôi cần làm gì?')">📋 Việc hôm nay</div>
-        <div class="chip" onclick="sendSuggestion('Nhắc tôi lúc 3h chiều họp')">⏰ Đặt nhắc nhở</div>
-        <div class="chip" onclick="sendSuggestion('Lên lịch cho ngày mai')">🗓️ Lên lịch ngày mai</div>
-        <div class="chip" onclick="openDailyReview()">📝 Tổng kết ngày</div>
+        <div class="chip" onclick="sendSuggestion('Hôm nay tôi cần làm gì?')"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;vertical-align:-1px;margin-right:4px"><rect x="1" y="1" width="12" height="12" rx="2"/><path d="M4 5h6M4 8h4"/></svg>Việc hôm nay</div>
+        <div class="chip" onclick="sendSuggestion('Nhắc tôi lúc 3h chiều họp')"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;vertical-align:-1px;margin-right:4px"><circle cx="7" cy="7" r="5.5"/><path d="M7 4.5v3l1.5 1.5"/></svg>Đặt nhắc nhở</div>
+        <div class="chip" onclick="sendSuggestion('Lên lịch cho ngày mai')"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;vertical-align:-1px;margin-right:4px"><rect x="1" y="2.5" width="12" height="10" rx="1.5"/><path d="M4 2.5v-1M10 2.5v-1M1 6h12"/></svg>Lên lịch ngày mai</div>
+        <div class="chip" onclick="openDailyReview()"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;vertical-align:-1px;margin-right:4px"><path d="M3 1.5h8a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V2.5a1 1 0 0 1 1-1z"/><path d="M4 5.5h6M4 8h4M4 10.5h2"/></svg>Tổng kết ngày</div>
       </div>
     </div>
   </div>
 
   <div id="input-area">
+    <div class="quick-actions" id="quick-actions">
+      <button class="qa-btn" onclick="triggerJob('morning_planning')" type="button"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;vertical-align:-2px;margin-right:5px"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 6h6M5 9h4"/></svg>Lên lịch mai</button>
+      <button class="qa-btn" onclick="openDailyReview()" type="button"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;vertical-align:-2px;margin-right:5px"><path d="M4 2h8a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M5 6h6M5 9h4M5 12h2"/><path d="M8 2v2"/></svg>Tổng kết ngày</button>
+      <button class="qa-btn" onclick="triggerJob('weekly_review')" type="button"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;vertical-align:-2px;margin-right:5px"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 3V1M11 3V1M2 7h12"/><path d="M5.5 10h1.5M9 10h1.5"/></svg>Tổng kết tuần</button>
+      <button class="qa-btn" onclick="triggerJob('monthly_review')" type="button"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;vertical-align:-2px;margin-right:5px"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 3V1M11 3V1M2 7h12"/><path d="M5 10h.5M8 10h.5M11 10h.5M5 13h.5M8 13h.5"/></svg>Tổng kết tháng</button>
+      <button class="qa-btn" onclick="sendSuggestion('Hôm nay tôi cần làm gì?')" type="button"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;vertical-align:-2px;margin-right:5px"><path d="M2 12V4l6-2 6 2v8"/><path d="M6 8v4M10 7v5M4 11v1"/></svg>Việc hôm nay</button>
+    </div>
+    <div class="input-row">
     <textarea id="msg-input" placeholder="Nhắn gì đó..." rows="1"
       onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
     <button id="send-btn" onclick="sendMessage()" title="Gửi">
@@ -822,6 +870,7 @@
         <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
       </svg>
     </button>
+    </div>
   </div>
 </div>
 
@@ -832,6 +881,8 @@ const API_URL = '/chat';
 let isTyping = false;
 let swRegistration = null;
 let hasMessages = false;
+let _msgSeq = 0;
+const _msgText = {};   // rowId → raw text (cho copy/edit/resend)
 
 const ICONS = {
   bell: '<svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
@@ -924,6 +975,8 @@ function appendMessage(role, text, extra) {
   const row = document.createElement('div');
   row.className = `msg-row ${role}`;
   row.dataset.ts = (extra && extra.ts != null) ? extra.ts : Date.now();
+  row.id = 'm' + (++_msgSeq);
+  _msgText[row.id] = text;
 
   // Build bubble HTML. AI reply render markdown; ghép trace + schedule card.
   let bubbleHtml;
@@ -936,23 +989,36 @@ function appendMessage(role, text, extra) {
     bubbleHtml = escapeHtml(text);
   }
 
+  const SVG_COPY = `<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><rect x="4" y="4" width="8" height="8" rx="1.5"/><path d="M2 10V3a1 1 0 0 1 1-1h7"/></svg>`;
+  const SVG_REGEN = `<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M2 7a5 5 0 1 0 1.5-3.5"/><path d="M2 3v3h3"/></svg>`;
+  const SVG_EDIT = `<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M9.5 2.5l2 2L5 11H3v-2L9.5 2.5z"/></svg>`;
+  const SVG_SEND = `<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M12 2L6 8M12 2L8 12l-2-4-4-2 10-4z"/></svg>`;
+
+  // Action buttons (copy / regen cho AI; copy / edit / resend cho me).
+  const actions = role === 'ai'
+    ? `<div class="msg-actions"><button class="msg-act-btn" onclick="copyMsg('${row.id}')" title="Sao chép" type="button">${SVG_COPY}</button><button class="msg-act-btn regen-btn" onclick="regenMsg('${row.id}')" title="Tạo lại" type="button">${SVG_REGEN}</button></div>`
+    : `<div class="msg-actions"><button class="msg-act-btn" onclick="copyMsg('${row.id}')" title="Sao chép" type="button">${SVG_COPY}</button><button class="msg-act-btn" onclick="editMsg('${row.id}')" title="Sửa rồi gửi lại" type="button">${SVG_EDIT}</button><button class="msg-act-btn" onclick="resendMsg('${row.id}')" title="Gửi lại" type="button">${SVG_SEND}</button></div>`;
+
   if (role === 'ai') {
     row.innerHTML = `
       <div class="msg-avatar"><img src="/static/icon.jpg" alt="Kim" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"></div>
       <div>
         <div class="bubble">${bubbleHtml}</div>
         <div class="msg-time">${(extra && extra.time) || now()}</div>
+        ${actions}
       </div>`;
   } else {
     row.innerHTML = `
       <div>
         <div class="bubble">${bubbleHtml}</div>
         <div class="msg-time">${(extra && extra.time) || now()}</div>
+        ${actions}
       </div>`;
   }
 
   msgs.appendChild(row);
   msgs.scrollTop = msgs.scrollHeight;
+  _refreshLastAiRegen();
   return row;
 }
 
@@ -967,11 +1033,11 @@ function renderScheduleCard(schedule) {
   ).join('');
   return `
     <div class="schedule-card" id="sched-${sid}" data-slots='${JSON.stringify(slots).replace(/'/g,"&#39;")}'>
-      <div class="sched-header">📋 Lịch ngày ${date}</div>
+      <div class="sched-header"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;vertical-align:-2px;margin-right:5px"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 3V1M11 3V1M2 7h12"/><path d="M5.5 10h1M8.5 10h1M5.5 13h1M8.5 13h1M11.5 10h1"/></svg>Lịch ngày ${date}</div>
       <div class="sched-slots">${slotHtml}</div>
       <div class="sched-actions">
-        <button class="sched-btn approve" onclick="approveSchedule(${sid})">✅ Duyệt</button>
-        <button class="sched-btn edit" onclick="editSchedule(${sid})">✏️ Sửa</button>
+        <button class="sched-btn approve" onclick="approveSchedule(${sid})"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;vertical-align:-1px;margin-right:4px"><path d="M2 7l3.5 3.5L12 3.5"/></svg>Duyệt</button>
+        <button class="sched-btn edit" onclick="editSchedule(${sid})"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;vertical-align:-1px;margin-right:4px"><path d="M9.5 2.5l2 2L5 11H3v-2L9.5 2.5z"/></svg>Sửa</button>
       </div>
     </div>`;
 }
@@ -1039,7 +1105,7 @@ function editSchedule(sid) {
       sl.innerHTML = `<span class="slot-time">${escapeHtml(time)}</span><span class="slot-title">${escapeHtml(title)}</span>`;
     });
     card.classList.remove('editing');
-    if (editBtn) editBtn.textContent = '✏️ Sửa';
+    if (editBtn) editBtn.innerHTML = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;vertical-align:-1px;margin-right:4px"><path d="M9.5 2.5l2 2L5 11H3v-2L9.5 2.5z"/></svg>Sửa';
   } else {
     // Bật edit: chuyển mỗi slot sang input.
     card.querySelectorAll('.slot').forEach(sl => {
@@ -1052,7 +1118,7 @@ function editSchedule(sid) {
       </div>`;
     });
     card.classList.add('editing');
-    if (editBtn) editBtn.textContent = '✓ Xong sửa';
+    if (editBtn) editBtn.innerHTML = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;vertical-align:-1px;margin-right:4px"><path d="M2 7l3.5 3.5L12 3.5"/></svg>Xong sửa';
   }
 }
 
@@ -1244,6 +1310,93 @@ function sendSuggestion(text) {
   sendMessage();
 }
 
+// Trigger proactive job thủ công (morning plan / weekly / monthly review) — hiển thị trong chat.
+async function triggerJob(job) {
+  if (isTyping) return;
+  if (!hasMessages) { showEmpty(false); hasMessages = true; }
+  showTyping();
+  try {
+    const res = await fetch('/proactive/run', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job })
+    });
+    const data = await res.json();
+    hideTyping();
+    if (!res.ok || !data.ok) {
+      let m = (data && data.error) ? data.error : 'lỗi không rõ';
+      m = m.includes('API key')
+        ? '⚙️ Chưa cài API key. Nhấn nút Cài đặt để điền thông tin rồi thử lại.'
+        : '⚠️ Không chạy được: ' + m;
+      appendMessage('ai', m);
+      return;
+    }
+    const extra = {};
+    if (job === 'morning_planning' && data.slots) {
+      extra.schedule = { id: data.job_id, date: data.date || '', slots: data.slots };
+    }
+    appendMessage('ai', data.content || '(không có nội dung)', extra);
+  } catch (e) {
+    hideTyping();
+    appendMessage('ai', '⚠️ Không kết nối được server. Thử lại nhé.');
+  }
+}
+
+// ── Per-message actions (copy / edit / resend / regenerate) ─────────────
+async function copyMsg(rowId) {
+  const t = _msgText[rowId];
+  if (!t) return;
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(t);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); ta.remove();
+    }
+    showToast('Đã sao chép ✓');
+  } catch (e) { showToast('Không sao chép được'); }
+}
+
+function editMsg(rowId) {
+  const t = _msgText[rowId];
+  if (!t) return;
+  const input = document.getElementById('msg-input');
+  input.value = t; autoResize(input); input.focus();
+}
+
+function resendMsg(rowId) {
+  const t = _msgText[rowId];
+  if (!t || isTyping) return;
+  document.getElementById('msg-input').value = t;
+  sendMessage();
+}
+
+function regenMsg(rowId) {
+  const aiRow = document.getElementById(rowId);
+  if (!aiRow || isTyping || !aiRow.classList.contains('can-regen')) return;
+  // Tìm msg-row.me gần nhất phía trước (câu hỏi dẫn đến reply này).
+  let prev = aiRow.previousElementSibling;
+  while (prev && !(prev.classList.contains('me') && prev.id && _msgText[prev.id])) {
+    prev = prev.previousElementSibling;
+  }
+  if (!prev) return;
+  const t = _msgText[prev.id];
+  aiRow.remove(); prev.remove();
+  document.getElementById('msg-input').value = t;
+  sendMessage();
+}
+
+// Đánh dấu can-regen cho đúng 1 row: AI reply cuối cùng (để regen không xáo trộn giữa history).
+function _refreshLastAiRegen() {
+  document.querySelectorAll('.msg-row.ai.can-regen').forEach(r => r.classList.remove('can-regen'));
+  const rows = Array.from(document.querySelectorAll('#messages .msg-row:not(#typing-indicator)'));
+  const last = rows[rows.length - 1];
+  if (last && last.classList.contains('ai') && last.id && _msgText[last.id]) {
+    last.classList.add('can-regen');
+  }
+}
+
 // Push Notification
 async function getVapidPublicKey() {
   if (window.VAPID_PUBLIC_KEY) return window.VAPID_PUBLIC_KEY;
@@ -1391,6 +1544,7 @@ async function loadHistory() {
 (async () => {
   await loadHistory();
   await loadPending();
+  _refreshLastAiRegen();
 })();
 
 // ── Settings ──────────────────────────────────────────────────────────
@@ -1512,9 +1666,9 @@ function renderTaskGroup(title, items, editable) {
     const prio = Number(it.priority || 3);
     const actions = editable ? `
       <div class="task-actions">
-        <button class="mini-act-btn" onclick="toggleTask(${it.id}, '${it.status}')">${done ? '↺ Mở lại' : '✓ Xong'}</button>
-        <button class="mini-act-btn" onclick="editTaskInline(${it.id})">✎ Sửa</button>
-        <button class="mini-act-btn danger" onclick="deleteTask(${it.id})">🗑 Xoá</button>
+        <button class="mini-act-btn" onclick="toggleTask(${it.id}, '${it.status}')">${done ? '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;vertical-align:-1px;margin-right:3px"><path d="M2 7a5 5 0 1 0 1.5-3.5"/><path d="M2 3v3h3"/></svg>Mở lại' : '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;vertical-align:-1px;margin-right:3px"><path d="M2 7l3.5 3.5L12 3.5"/></svg>Xong'}</button>
+        <button class="mini-act-btn" onclick="editTaskInline(${it.id})"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;vertical-align:-1px;margin-right:3px"><path d="M9.5 2.5l2 2L5 11H3v-2L9.5 2.5z"/></svg>Sửa</button>
+        <button class="mini-act-btn danger" onclick="deleteTask(${it.id})"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;vertical-align:-1px;margin-right:3px"><path d="M2 4h10M5 4V3h4v1M5.5 6v5M8.5 6v5"/><path d="M3 4l.5 8h7L11 4"/></svg>Xoá</button>
       </div>` : '';
     return `<div class="task-item ${done ? 'done' : ''}" id="task-row-${it.id}" data-task='${JSON.stringify(taskPlain(it)).replace(/'/g,"&#39;")}'>
       <span class="task-priority ${taskPriorityClass(prio)}">P${prio}</span>
@@ -1565,8 +1719,8 @@ function renderMemoryItems(items, editable) {
     const imp = Number(it.importance || 1);
     const actions = editable ? `
       <div class="mem-actions">
-        <button class="mini-act-btn" onclick="editMemoryInline(${it.id})">✎ Sửa</button>
-        <button class="mini-act-btn danger" onclick="deleteMemory(${it.id})">🗑 Xoá</button>
+        <button class="mini-act-btn" onclick="editMemoryInline(${it.id})"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;vertical-align:-1px;margin-right:3px"><path d="M9.5 2.5l2 2L5 11H3v-2L9.5 2.5z"/></svg>Sửa</button>
+        <button class="mini-act-btn danger" onclick="deleteMemory(${it.id})"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;vertical-align:-1px;margin-right:3px"><path d="M2 4h10M5 4V3h4v1M5.5 6v5M8.5 6v5"/><path d="M3 4l.5 8h7L11 4"/></svg>Xoá</button>
       </div>` : '';
     return `<div class="mem-item" id="mem-row-${it.id}" data-mem='${JSON.stringify({id:it.id,content:it.content||'',type,importance:imp}).replace(/'/g,"&#39;")}'>
       <div class="mem-meta-row">
@@ -1890,10 +2044,10 @@ async function resetChat() {
 
 // ── Pending reports (proactive reviews/planning) ───────────────────────
 const PENDING_LABEL = {
-  morning_planning: '📋 Lịch ngày',
-  daily_review: '📝 Tổng kết ngày',
-  weekly_review: '📅 Tổng kết tuần',
-  monthly_review: '🗓️ Tổng kết tháng',
+  morning_planning: '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;vertical-align:-1px;margin-right:4px"><rect x="1" y="2" width="12" height="10" rx="1.5"/><path d="M4 2V1M10 2V1M1 6h12"/><path d="M4 9h2M7.5 9h2"/></svg>Lịch ngày',
+  daily_review: '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;vertical-align:-1px;margin-right:4px"><path d="M3 1h8a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1z"/><path d="M4 5h6M4 7.5h4M4 10h2"/></svg>Tổng kết ngày',
+  weekly_review: '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;vertical-align:-1px;margin-right:4px"><rect x="1" y="2" width="12" height="10" rx="1.5"/><path d="M4 2V1M10 2V1M1 6h12"/><path d="M4 9h1M6.5 9h1M9 9h1"/></svg>Tổng kết tuần',
+  monthly_review: '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;vertical-align:-1px;margin-right:4px"><rect x="1" y="2" width="12" height="10" rx="1.5"/><path d="M4 2V1M10 2V1M1 6h12"/><path d="M4 9h1M6.5 9h1M9 9h1M4 11.5h1M6.5 11.5h1"/></svg>Tổng kết tháng',
 };
 
 async function loadPending() {
@@ -1988,17 +2142,22 @@ async function submitReview(jobId) {
   const completed = Array.from(row.querySelectorAll('.review-checklist input[type=checkbox]:not([disabled]):checked'))
     .map(cb => parseInt(cb.value, 10));
   const other = (row.querySelector('.review-other')?.value || '').trim();
+  // Ẩn form ngay + hiện typing (LLM tổng kết mất vài giây).
+  row.remove();
+  if (!hasMessages) { showEmpty(false); hasMessages = true; }
+  showTyping();
   try {
     const res = await fetch('/daily-review/submit', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ job_id: jobId, completed_task_ids: completed, other_done: other })
     });
     const data = await res.json();
+    hideTyping();
     if (!res.ok) throw new Error(data.error || 'server');
-    row.remove();
     appendMessage('ai', data.text || 'Đã ghi nhận tổng kết.');
     showToast('Đã ghi nhận tổng kết ✓');
   } catch (e) {
+    hideTyping();
     showToast('Lỗi ghi nhận tổng kết');
   }
 }
@@ -2040,7 +2199,7 @@ setInterval(() => {
     <!-- Header -->
     <div class="settings-header">
       <div class="settings-title">Cài đặt</div>
-      <button class="settings-close-btn" onclick="closeSettings()" type="button">✕</button>
+      <button class="settings-close-btn" onclick="closeSettings()" type="button"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:12px;height:12px"><path d="M2 2l10 10M12 2L2 12"/></svg></button>
     </div>
 
     <!-- Section: Kết nối AI -->
