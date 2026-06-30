@@ -124,12 +124,19 @@
   .header-icon-btn:active { transform: scale(.96); }
   .header-icon-btn.enabled, .header-icon-btn.configured { border-color: #22c55e; color: #22c55e; }
 
-  /* Quick-action bar (manual triggers phía trên input chat) */
+  /* Quick-action bar — nằm ngay trên thanh chat, ẩn khi bàn phím bật */
   .quick-actions {
     display: flex; gap: 8px; padding: 6px 12px;
     overflow-x: auto; -webkit-overflow-scrolling: touch;
     border-top: 1px solid var(--border);
     scrollbar-width: none;
+    transition: max-height .2s ease, opacity .2s ease, padding .2s ease;
+    max-height: 60px;
+    overflow-y: hidden;
+  }
+  .quick-actions.kb-hidden {
+    max-height: 0; opacity: 0; padding-top: 0; padding-bottom: 0;
+    pointer-events: none;
   }
   .quick-actions::-webkit-scrollbar { display: none; }
   .qa-btn {
@@ -273,7 +280,7 @@
     display: flex;
     gap: 10px;
     align-items: flex-end;
-    padding: 8px 16px 0;
+    padding: 10px 16px 0;
   }
 
   #msg-input {
@@ -798,6 +805,11 @@
     outline: none; transition: border-color .2s; width: 100%; height: 36px; box-sizing: border-box;
     color-scheme: dark; -webkit-appearance: none; appearance: none;
   }
+  .crud-form input[type="datetime-local"],
+  .task-edit-form input[type="datetime-local"],
+  .mem-edit-form input[type="datetime-local"] {
+    font-size: 11px; padding: 0 6px;
+  }
   .crud-form select, .task-edit-form select, .mem-edit-form select {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23888' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: right 10px center; padding-right: 26px;
@@ -990,14 +1002,14 @@ function appendMessage(role, text, extra) {
   }
 
   const SVG_COPY = `<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><rect x="4" y="4" width="8" height="8" rx="1.5"/><path d="M2 10V3a1 1 0 0 1 1-1h7"/></svg>`;
-  const SVG_REGEN = `<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M2 7a5 5 0 1 0 1.5-3.5"/><path d="M2 3v3h3"/></svg>`;
+  const SVG_REGEN = `<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M7 1v2M7 11v2M1 7h2M11 7h2M3.2 3.2l1.4 1.4M9.4 9.4l1.4 1.4M9.4 4.6L8 6M6 8l-1.4 1.4"/><circle cx="7" cy="7" r="2"/></svg>`;
   const SVG_EDIT = `<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M9.5 2.5l2 2L5 11H3v-2L9.5 2.5z"/></svg>`;
   const SVG_SEND = `<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M12 2L6 8M12 2L8 12l-2-4-4-2 10-4z"/></svg>`;
 
-  // Action buttons (copy / regen cho AI; copy / edit / resend cho me).
+  // Action buttons (copy / regen cho AI; không có cho me).
   const actions = role === 'ai'
     ? `<div class="msg-actions"><button class="msg-act-btn" onclick="copyMsg('${row.id}')" title="Sao chép" type="button">${SVG_COPY}</button><button class="msg-act-btn regen-btn" onclick="regenMsg('${row.id}')" title="Tạo lại" type="button">${SVG_REGEN}</button></div>`
-    : `<div class="msg-actions"><button class="msg-act-btn" onclick="copyMsg('${row.id}')" title="Sao chép" type="button">${SVG_COPY}</button><button class="msg-act-btn" onclick="editMsg('${row.id}')" title="Sửa rồi gửi lại" type="button">${SVG_EDIT}</button><button class="msg-act-btn" onclick="resendMsg('${row.id}')" title="Gửi lại" type="button">${SVG_SEND}</button></div>`;
+    : '';
 
   if (role === 'ai') {
     row.innerHTML = `
@@ -1012,7 +1024,6 @@ function appendMessage(role, text, extra) {
       <div>
         <div class="bubble">${bubbleHtml}</div>
         <div class="msg-time">${(extra && extra.time) || now()}</div>
-        ${actions}
       </div>`;
   }
 
@@ -2187,6 +2198,17 @@ async function dismissPending(id) {
 setInterval(() => {
   fetch('/ping').catch(() => {})
 }, 300000)
+
+// Ẩn quick-actions khi bàn phím bật (mobile)
+if (window.visualViewport) {
+  let _vpHeight = window.visualViewport.height;
+  window.visualViewport.addEventListener('resize', () => {
+    const qa = document.getElementById('quick-actions');
+    if (!qa) return;
+    const shrunk = window.visualViewport.height < _vpHeight * 0.85;
+    qa.classList.toggle('kb-hidden', shrunk);
+  });
+}
 
 </script>
 
